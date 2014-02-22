@@ -199,28 +199,30 @@ public class Recorder implements Camera.PreviewCallback {
 				videoThread.join();
 			} catch (InterruptedException e) {}
 			try {
-				String aacTrackPath = new StringBuilder(outputPath).append('.').append("aac").toString();
-				String h264TrackPath = new StringBuilder(outputPath).append('.').append("h264").toString();
-				AACTrackImpl aacTrack = new AACTrackImpl(new FileDataSourceImpl(aacTrackPath));
-				H264TrackImpl h264Track = new H264TrackImpl(new FileDataSourceImpl(h264TrackPath), "eng", 1000000,
-						(int) (1000000.f / frameRate));
-				Movie movie = new Movie();
-				movie.addTrack(h264Track);
-				movie.addTrack(aacTrack);
-				Container out = new DefaultMp4Builder().build(movie);
-				FileOutputStream fos = new FileOutputStream(new File(outputPath));
-				out.writeContainer(fos.getChannel());
-				fos.close();
-				/*new File(aacTrackPath).delete();
-				new File(h264TrackPath).delete();*/
-				if (recordingFinishedListener != null && context instanceof Activity) {
-					((Activity) context).runOnUiThread(new Runnable() {
+				if (!canceled) {
+					String aacTrackPath = new StringBuilder(outputPath).append('.').append("aac").toString();
+					String h264TrackPath = new StringBuilder(outputPath).append('.').append("h264").toString();
+					AACTrackImpl aacTrack = new AACTrackImpl(new FileDataSourceImpl(aacTrackPath));
+					H264TrackImpl h264Track = new H264TrackImpl(new FileDataSourceImpl(h264TrackPath), "eng", 1000000,
+							(int) (1000000.f / frameRate));
+					Movie movie = new Movie();
+					movie.addTrack(h264Track);
+					movie.addTrack(aacTrack);
+					Container out = new DefaultMp4Builder().build(movie);
+					FileOutputStream fos = new FileOutputStream(new File(outputPath));
+					out.writeContainer(fos.getChannel());
+					fos.close();
+					/*new File(aacTrackPath).delete();
+					new File(h264TrackPath).delete();*/
+					if (recordingFinishedListener != null && context instanceof Activity) {
+						((Activity) context).runOnUiThread(new Runnable() {
 
-						@Override
-						public void run() {
-							recordingFinishedListener.onRecordingFinished(new File(outputPath));
-						}
-					});
+							@Override
+							public void run() {
+								recordingFinishedListener.onRecordingFinished(new File(outputPath));
+							}
+						});
+					}
 				}
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
@@ -237,6 +239,7 @@ public class Recorder implements Camera.PreviewCallback {
 	private volatile boolean recording;
 	private volatile boolean runAudioThread;
 	private volatile boolean runVideoThread;
+	private volatile boolean canceled;
 	private int audioSampleRate;
 	private Context context;
 	private Camera camera;
@@ -269,6 +272,7 @@ public class Recorder implements Camera.PreviewCallback {
 		this.recordStart = 0;
 		this.progressUpdateInterval = -1;
 		this.recording = false;
+		this.canceled = false;
 		viewDataQueue = new ConcurrentLinkedQueue<VideoData>();
 	}
 
@@ -303,6 +307,7 @@ public class Recorder implements Camera.PreviewCallback {
 		if (camera == null)
 			throw new IllegalStateException("No camera set.");
 		recording = false;
+		canceled = false;
 		recordStart = 0;
 		Parameters cameraParameters = camera.getParameters();
 		synchronized (RECORDER_SYNC) {
@@ -362,6 +367,11 @@ public class Recorder implements Camera.PreviewCallback {
 
 	public void setAudioSampleRate(int sampleRate) {
 		this.audioSampleRate = sampleRate;
+	}
+
+	public void cancel() {
+		canceled = true;
+		stop();
 	}
 
 	@Override
