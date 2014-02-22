@@ -36,7 +36,8 @@ gen/
 # object files from c compiler
 *.o.d
 *.o
-splots/obj
+obj
+libs/armeabi*
 
 # Mac filesystem dust
 .DS_Store

@@ -72,8 +72,8 @@ void FillSpecificParameters(SEncParamExt *sParam) {
 	sParam->iPicHeight = destSize;			// height of picture in samples
 	sParam->iTargetBitrate = 512000;		// target bitrate desired
 	sParam->iRCMode = 0;            //  rc mode control
-	sParam->iTemporalLayerNum = 3;	// layer number at temporal level
-	sParam->iSpatialLayerNum = 2;	// layer number at spatial level
+	sParam->iTemporalLayerNum = 0;	// layer number at temporal level
+	sParam->iSpatialLayerNum = 0;	// layer number at spatial level
 	sParam->bEnableDenoise = 0;    // denoise control
 	sParam->bEnableBackgroundDetection = 1; // background detection control
 	sParam->bEnableAdaptiveQuant = 1; // adaptive quantization control
@@ -152,7 +152,7 @@ void FillSpecificParameters(SEncParamExt *sParam) {
 				"Could not open the output file.");
 		return;
 	}
-	LOG("voll der test. writing to %s", output_file);
+	LOG("bisam. writing to %s", output_file);
 	(*env)->ReleaseStringUTFChars(env, output_path, output_file);
 }
 

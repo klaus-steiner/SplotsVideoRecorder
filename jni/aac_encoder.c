@@ -26,7 +26,7 @@ AACENC_PARAM params = { 0 };
 /**
  * initialize aac encoder
  **/
-JNIEXPORT void JNICALL Java_co_splots_splots_media_AACEncoder_init(JNIEnv* env,
+JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_init(JNIEnv* env,
 		jobject thiz, jint bitrate, jint channels, jint sample_rate,
 		jint bits_per_sample, jstring output_path) {
 
@@ -76,7 +76,7 @@ JNIEXPORT void JNICALL Java_co_splots_splots_media_AACEncoder_init(JNIEnv* env,
 /**
  * encode data
  */
-JNIEXPORT void JNICALL Java_co_splots_splots_media_AACEncoder_encode(
+JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_encode(
 		JNIEnv* env, jobject thiz, jbyteArray input_data) {
 
 	jbyte* buffer = (*env)->GetByteArrayElements(env, input_data, (jboolean) 0);
@@ -125,7 +125,7 @@ JNIEXPORT void JNICALL Java_co_splots_splots_media_AACEncoder_encode(
 /**
  * release encoder
  */
-void Java_co_splots_splots_media_AACEncoder_release(JNIEnv* env, jobject thiz) {
+void Java_co_splots_recorder_AACEncoder_release(JNIEnv* env, jobject thiz) {
 	fclose(outfile);
 	codec_api.Uninit(handle);
 }

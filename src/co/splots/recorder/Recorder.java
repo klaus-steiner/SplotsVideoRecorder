@@ -352,7 +352,7 @@ public class Recorder implements Camera.PreviewCallback {
 			recordingStoppedListener.onRecordingStopped();
 	}
 
-	public synchronized long getRecordDuration() {
+	public long getRecordDuration() {
 		return recordedTime;
 	}
 
@@ -370,7 +370,7 @@ public class Recorder implements Camera.PreviewCallback {
 			long currentTime = System.nanoTime();
 			long recordDuration = currentTime - recordStart;
 			recordedTime = recordDuration + lastRecordedTimeOffset;
-			viewDataQueue.offer(new VideoData().set(recordedTime, data.clone(), cameraInfo));
+			viewDataQueue.offer(new VideoData().set(recordedTime, data, cameraInfo));
 			if ((progressUpdateListener != null) && (progressUpdateInterval > 0)
 					&& ((lastPublish + progressUpdateInterval) <= currentTime) || lastPublish < 0) {
 				lastPublish = currentTime;
