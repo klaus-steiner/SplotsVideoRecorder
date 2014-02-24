@@ -2,32 +2,46 @@ package co.splots.recorder;
 
 import java.io.IOException;
 
+import android.graphics.Rect;
 import android.hardware.Camera.CameraInfo;
 
 public class H264Encoder {
 
 	/**
-	 * Native JNI - initialize H264 encoder
+	 * Initialize H264 encoder
 	 * 
+	 * @param frameRate
+	 *           the maximum frame rate.
+	 * @param srcWidth
+	 *           Input width of the preview frame.
+	 * @param srcHeight
+	 *           Input height of the preview frame.
+	 * @param destRect 
 	 */
-	public native void init(float frameRate, int srcWidth, int srcHeight, int destSize, String outputFile)
+	public native void init(float frameRate, int srcWidth, int srcHeight, Rect destRect, String outputFile)
 			throws IOException;
 
 	/**
-	 * Native JNI - encode one or more frames
+	 * Encodes a preview frame
+	 * 
+	 * @param preview
+	 *           Preview frame in nv21 format.
+	 * @param info
+	 *           Frame info. This contains orientation and facing.
+	 * @return true if success.
 	 * 
 	 */
-	public native boolean encode(byte[] inputArray, CameraInfo info);
+	public native boolean encode(byte[] preview, CameraInfo info);
 
 	/**
-	 * Thumbnail data
-	 * @return thumbnail in nv21 yuv format
+	 * Thumbnail data (first frame of the video)
+	 * 
+	 * @return thumbnail byte array in nv21 yuv format.
 	 */
 	public native byte[] getThumbnail();
 
 	/**
-	 * Native JNI - release H264 encoder and flush file
-	 * 
+	 * Release H264 encoder and flush file
 	 */
 	public native void release();
 

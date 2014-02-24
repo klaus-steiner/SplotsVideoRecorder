@@ -13,4 +13,4 @@ these problems.
 - Muxing audio and video to mp4 file with Mp4Parser
   Source: https://code.google.com/p/mp4parser
   
-The goal is to combine these project to a simple to use library.
+The goal is to combine these projects to a simple to use library.

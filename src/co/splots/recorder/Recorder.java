@@ -8,8 +8,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import android.app.Activity;
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
@@ -104,9 +102,9 @@ public class Recorder implements Camera.PreviewCallback {
 			String aacStreamPath = new StringBuilder(outputPath).append('.').append("aac").toString();
 			AACEncoder aacEncoder = new AACEncoder();
 			aacEncoder.init(125000, 1, audioSampleRate, 16, aacStreamPath);
-			synchronized (Recorder.LOCK) {
+			synchronized (Recorder.SYNC_AAC_H264) {
 				ready = true;
-				Recorder.LOCK.notifyAll();
+				Recorder.SYNC_AAC_H264.notifyAll();
 			}
 			while (runAudioThread) {
 				int readedDataSize = audioRecord.read(frameData, 0, frameData.length);
@@ -149,7 +147,8 @@ public class Recorder implements Camera.PreviewCallback {
 			H264Encoder encoder = new H264Encoder();
 			String h264Path = new StringBuilder(outputPath).append('.').append("h264").toString();
 			try {
-				encoder.init(frameRate, previewSize.width, previewSize.height, frameSize, h264Path);
+				encoder.init(frameRate, previewSize.width, previewSize.height, new Rect(0, 0, frameSize, frameSize),
+						h264Path);
 				while (!lastData) {
 					concurrentData = viewDataQueue.poll();
 					lastData = (concurrentData == null) && !runVideoThread;
@@ -199,9 +198,9 @@ public class Recorder implements Camera.PreviewCallback {
 				videoThread.join();
 			} catch (InterruptedException e) {}
 			try {
+				String aacTrackPath = new StringBuilder(outputPath).append('.').append("aac").toString();
+				String h264TrackPath = new StringBuilder(outputPath).append('.').append("h264").toString();
 				if (!canceled) {
-					String aacTrackPath = new StringBuilder(outputPath).append('.').append("aac").toString();
-					String h264TrackPath = new StringBuilder(outputPath).append('.').append("h264").toString();
 					AACTrackImpl aacTrack = new AACTrackImpl(new FileDataSourceImpl(aacTrackPath));
 					H264TrackImpl h264Track = new H264TrackImpl(new FileDataSourceImpl(h264TrackPath), "eng", 1000000,
 							(int) (1000000.f / frameRate));
@@ -214,15 +213,12 @@ public class Recorder implements Camera.PreviewCallback {
 					fos.close();
 					/*new File(aacTrackPath).delete();
 					new File(h264TrackPath).delete();*/
-					if (recordingFinishedListener != null && context instanceof Activity) {
-						((Activity) context).runOnUiThread(new Runnable() {
-
-							@Override
-							public void run() {
-								recordingFinishedListener.onRecordingFinished(new File(outputPath));
-							}
-						});
-					}
+					//TODO put this in ui thread
+					if (recordingFinishedListener != null)
+						recordingFinishedListener.onRecordingFinished(new File(outputPath));
+				} else {
+					new File(h264TrackPath).delete();
+					new File(aacTrackPath).delete();
 				}
 			} catch (FileNotFoundException e) {
 				e.printStackTrace();
@@ -232,8 +228,7 @@ public class Recorder implements Camera.PreviewCallback {
 		}
 	}
 
-	public static final Object LOCK = new Object();
-	private static final Object RECORDER_SYNC = new Object();
+	public static final Object SYNC_AAC_H264 = new Object();
 	private static final String TAG = Recorder.class.getName();
 	private ConcurrentLinkedQueue<VideoData> viewDataQueue;
 	private volatile boolean recording;
@@ -241,7 +236,7 @@ public class Recorder implements Camera.PreviewCallback {
 	private volatile boolean runVideoThread;
 	private volatile boolean canceled;
 	private int audioSampleRate;
-	private Context context;
+	//private Context context;
 	private Camera camera;
 	private long maxDuration;
 	private long recordedTime;
@@ -261,8 +256,7 @@ public class Recorder implements Camera.PreviewCallback {
 	private Thread audioThread;
 	private float frameRate;
 
-	public Recorder(Context context, String outputPath, int frameSize) {
-		this.context = context;
+	public Recorder(String outputPath, int frameSize) {
 		this.outputPath = outputPath;
 		this.frameSize = frameSize;
 		this.audioSampleRate = 44100;
@@ -302,7 +296,7 @@ public class Recorder implements Camera.PreviewCallback {
 	}
 
 	public void prepare() throws IOException {
-		if (runVideoThread)
+		if (runVideoThread || runAudioThread)
 			throw new IllegalStateException("You must first stop the encoder.");
 		if (camera == null)
 			throw new IllegalStateException("No camera set.");
@@ -310,12 +304,10 @@ public class Recorder implements Camera.PreviewCallback {
 		canceled = false;
 		recordStart = 0;
 		Parameters cameraParameters = camera.getParameters();
-		synchronized (RECORDER_SYNC) {
-			previewSize = cameraParameters.getPreviewSize();
-			int[] fpsRange = new int[2];
-			cameraParameters.getPreviewFpsRange(fpsRange);
-			frameRate = ((float) fpsRange[1]) / 1000.f;
-		}
+		previewSize = cameraParameters.getPreviewSize();
+		int[] fpsRange = new int[2];
+		cameraParameters.getPreviewFpsRange(fpsRange);
+		frameRate = ((float) fpsRange[Parameters.PREVIEW_FPS_MAX_INDEX]) / 1000.f;
 		cameraParameters.setPreviewFormat(ImageFormat.NV21);
 		camera.setParameters(cameraParameters);
 		runAudioThread = true;
@@ -323,16 +315,16 @@ public class Recorder implements Camera.PreviewCallback {
 		audioThread = new Thread(audioRecordRunnable, "AudioThread");
 		audioThread.start();
 		camera.setPreviewCallback(this);
-		synchronized (Recorder.LOCK) {
+		synchronized (Recorder.SYNC_AAC_H264) {
 			try {
 				while (!audioRecordRunnable.isReady())
-					LOCK.wait();
+					SYNC_AAC_H264.wait();
 			} catch (InterruptedException e) {}
 		}
 		runVideoThread = true;
 		videoThread = new Thread(new VideoEncoderRunnable(), "VideoThread");
 		videoThread.start();
-		new Thread(new MuxerRunnable(), "MuxerRunnable").start();
+		new Thread(new MuxerRunnable(), "MuxerThread").start();
 		Log.d(TAG, "everything prepared....");
 	}
 
