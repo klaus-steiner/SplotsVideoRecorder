@@ -1,8 +1,6 @@
 package co.splots.recorder;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 
 import android.graphics.Bitmap;
@@ -13,6 +11,8 @@ import android.graphics.YuvImage;
 import android.hardware.Camera.CameraInfo;
 
 public class H264Encoder {
+
+	private Bitmap thumbnail;
 
 	/**
 	 * Initialize H264 encoder
@@ -46,11 +46,27 @@ public class H264Encoder {
 	 * 
 	 * @return thumbnail byte array in nv21 yuv format.
 	 */
-	public native byte[] getThumbnailData();
+	private native byte[] getThumbnailData();
 
-	public native int getThumbnailWidth();
+	private native int getThumbnailWidth();
 
-	public native int getThumbnailHeight();
+	private native int getThumbnailHeight();
+
+	public Bitmap getThumbnail() {
+		if (thumbnail == null) {
+			byte[] thumbnailData = getThumbnailData();
+			if (thumbnailData != null) {
+				int width = getThumbnailWidth();
+				int height = getThumbnailHeight();
+				YuvImage yuvImage = new YuvImage(thumbnailData, ImageFormat.NV21, width, height, null);
+				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				yuvImage.compressToJpeg(new Rect(0, 0, width, height), 100, baos);
+				byte[] jdata = baos.toByteArray();
+				thumbnail = BitmapFactory.decodeByteArray(jdata, 0, jdata.length);
+			}
+		}
+		return thumbnail;
+	}
 
 	/**
 	 * Release H264 encoder and flush file

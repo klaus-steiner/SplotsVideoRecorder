@@ -6,7 +6,8 @@ public class AACEncoder {
 	 * Native JNI - initialize AAC encoder
 	 * 
 	 */
-	public native void init(int bitrate, int channels, int sampleRate, int bitsPerSample, String outputFile);
+	public native void init(int bitrate, int channels, int sampleRate, int bitsPerSample, String outputFile)
+			throws IllegalArgumentException;
 
 	/**
 	 * Native JNI - encode one or more frames

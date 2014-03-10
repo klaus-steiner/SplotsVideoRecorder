@@ -43,7 +43,6 @@ void writeInfoToFile(SFrameBSInfo *info) {
 		for (j = 0; j < layerInfo.iNalCount; ++j)
 			layerSize += layerInfo.iNalLengthInByte[j];
 		fwrite(layerInfo.pBsBuf, 1, layerSize, outfile);
-		LOG("writing %d bytes...", layerSize);
 	}
 }
 
@@ -65,26 +64,53 @@ JNIEXPORT void JNICALL Java_co_splots_recorder_H264Encoder_init(JNIEnv* env,
 	src_height = (int) srcHeight;
 	frame_rate = (float) frameRate;
 
-	LOG(
-			"Encoder initializing...\nCrop x:%d\t\tCrop y:%d\nCrop width:%d\t\tCrop height:%d\ndest width:%d\t\tdest height:%d\nsrc width:%d\t\tsrc height:%d",
-			crop_x, crop_y, crop_width, crop_height, dest_width, dest_height,
-			src_width, src_height);
 	if (CreateSVCEncoder(&encoder) != cmResultSuccess) {
 		throwJavaException(env, "java/io/IOException",
 				"Couldn't create encoder.");
 		return;
 	}
-	/*SEncParamExt sParam;
-	 memset(&sParam, 0, sizeof(SEncParamExt));
-	 (*encoder)->GetDefaultParams(encoder, &sParam);*/
-	SEncParamBase sParam;
-	memset(&sParam, 0, sizeof(SEncParamBase));
+	/*SEncParamBase sParam;
+	 memset(&sParam, 0, sizeof(SEncParamBase));*/
+	SEncParamExt sParam;
+	memset(&sParam, 0, sizeof(SEncParamExt));
 	sParam.fMaxFrameRate = frame_rate;
 	sParam.iInputCsp = videoFormatI420;
 	sParam.iPicWidth = dest_width;
 	sParam.iPicHeight = dest_height;
-	sParam.iTargetBitrate = 1000000;
-	if ((*encoder)->Initialize(encoder, &sParam) != cmResultSuccess) {
+	sParam.iTargetBitrate = 5000000;
+	sParam.iRCMode = 0;
+	sParam.iTemporalLayerNum = 3;
+	sParam.iSpatialLayerNum = 1;
+	sParam.bEnableDenoise = 0;
+	sParam.bEnableBackgroundDetection = 1;
+	sParam.bEnableAdaptiveQuant = 1;
+	sParam.bEnableFrameSkip = 1;
+	sParam.bEnableLongTermReference = 0;
+	sParam.iLtrMarkPeriod = 30;
+	sParam.uiIntraPeriod = 320;
+	sParam.bEnableSpsPpsIdAddition = 1;
+	sParam.bPrefixNalAddingCtrl = 1;
+
+	int spatial_width = dest_width / 2;
+	int spatial_height = dest_height / 2;
+	int i = 0;
+	for (i = 0; i <= 16; i++) {
+		if ((spatial_width % 16) == 0)
+			break;
+		spatial_width++;
+	}
+	for (i = 0; i <= 16; i++) {
+		if ((spatial_height % 16) == 0)
+			break;
+		spatial_height++;
+	}
+	int iIndexLayer = 0;
+	sParam.sSpatialLayers[iIndexLayer].iVideoWidth = spatial_width;
+	sParam.sSpatialLayers[iIndexLayer].iVideoHeight = spatial_height;
+	sParam.sSpatialLayers[iIndexLayer].fFrameRate = frame_rate / 2;
+	sParam.sSpatialLayers[iIndexLayer].iSpatialBitrate = 1000000;
+
+	if ((*encoder)->InitializeExt(encoder, &sParam) != cmResultSuccess) {
 		throwJavaException(env, "java/io/IOException",
 				"Couldn't initialize encoder.");
 		return;
@@ -99,8 +125,6 @@ JNIEXPORT void JNICALL Java_co_splots_recorder_H264Encoder_init(JNIEnv* env,
 		return;
 	}
 	(*env)->ReleaseStringUTFChars(env, outputPath, output_file_path);
-	//(*encoder)->EncodeParameterSets(encoder, &info);
-	//writeInfoToFile(&info);
 }
 
 JNIEXPORT jbyteArray JNICALL Java_co_splots_recorder_H264Encoder_getThumbnailData(
@@ -115,12 +139,12 @@ JNIEXPORT jbyteArray JNICALL Java_co_splots_recorder_H264Encoder_getThumbnailDat
 
 JNIEXPORT jint JNICALL Java_co_splots_recorder_H264Encoder_getThumbnailWidth(
 		JNIEnv* env, jobject thiz) {
-	return thumbnail == NULL ? 0 : thumbnail_width;
+	return thumbnail_width;
 }
 
 JNIEXPORT jint JNICALL Java_co_splots_recorder_H264Encoder_getThumbnailHeight(
 		JNIEnv* env, jobject thiz) {
-	return thumbnail == NULL ? 0 : thumbnail_height;
+	return thumbnail_height;
 }
 
 JNIEXPORT jboolean JNICALL Java_co_splots_recorder_H264Encoder_encode(
@@ -178,10 +202,11 @@ JNIEXPORT jboolean JNICALL Java_co_splots_recorder_H264Encoder_encode(
 	}
 	uint8_t *frame = (uint8_t *) malloc(sizeof(uint8_t) * scaled_data_length);
 	uint8_t *frame_y = frame;
-	uint8_t* frame_vu = frame + (dest_width * dest_height);
-	I420ToNV12(scaled_i420_y, dest_width, scaled_i420_u, scaled_half_size,
-			scaled_i420_v, scaled_half_size, frame_y, dest_width, frame_vu,
-			dest_width, dest_width, dest_height);
+	uint8_t *frame_u = frame_y + (dest_width * dest_height);
+	uint8_t *frame_v = frame_u + (scaled_half_size * scaled_half_size);
+	memcpy(frame_y, scaled_i420_y, dest_width * dest_height);
+	memcpy(frame_u, scaled_i420_v, scaled_half_size * scaled_half_size);
+	memcpy(frame_v, scaled_i420_u, scaled_half_size * scaled_half_size);
 	if (thumbnail == NULL) {
 		thumbnail_size = scaled_data_length;
 		thumbnail_width = dest_width;
@@ -189,12 +214,10 @@ JNIEXPORT jboolean JNICALL Java_co_splots_recorder_H264Encoder_encode(
 		thumbnail = (uint8_t *) malloc(sizeof(uint8_t) * thumbnail_size);
 		uint8_t* thumbnail_y = thumbnail;
 		uint8_t* thumbnail_vu = thumbnail + (dest_width * dest_height);
-		/*I420ToNV12(scaled_i420_y, dest_width, scaled_i420_v, scaled_half_size,
-		 scaled_i420_u, scaled_half_size, thumbnail_y, dest_width,
-		 thumbnail_vu, dest_width, dest_width, dest_height);*/
-		memcpy(thumbnail, frame, thumbnail_size);
+		I420ToNV12(scaled_i420_y, dest_width, scaled_i420_u, scaled_half_size,
+				scaled_i420_v, scaled_half_size, thumbnail_y, dest_width,
+				thumbnail_vu, dest_width, dest_width, dest_height);
 	}
-
 	SSourcePicture pic;
 	memset(&pic, 0, sizeof(SSourcePicture));
 	pic.iPicWidth = dest_width;
@@ -202,9 +225,7 @@ JNIEXPORT jboolean JNICALL Java_co_splots_recorder_H264Encoder_encode(
 	pic.iColorFormat = videoFormatI420;
 	pic.iStride[0] = dest_width;
 	pic.iStride[1] = pic.iStride[2] = scaled_half_size;
-	long long time_stamp = (long long) timeStamp;
-	LOG("encoding frame timestamp=%llu", time_stamp);
-	pic.uiTimeStamp = time_stamp;
+	pic.uiTimeStamp = (long long) timeStamp;
 	pic.pData[0] = frame;
 	pic.pData[1] = pic.pData[0] + dest_width * dest_height;
 	pic.pData[2] = pic.pData[1] + (scaled_half_size * scaled_half_size);
@@ -219,12 +240,12 @@ JNIEXPORT jboolean JNICALL Java_co_splots_recorder_H264Encoder_encode(
 
 JNIEXPORT void JNICALL Java_co_splots_recorder_H264Encoder_release(JNIEnv* env,
 		jobject thiz) {
-	if (outfile != NULL)
-		fclose(outfile);
 	if (encoder) {
 		(*encoder)->Uninitialize(encoder);
 		DestroySVCEncoder(encoder);
 	}
+	if (outfile != NULL)
+		fclose(outfile);
 }
 
 JNIEXPORT jint JNICALL

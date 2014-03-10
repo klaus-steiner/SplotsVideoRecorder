@@ -25,8 +25,7 @@ AACENC_PARAM params = { 0 };
 
 /**
  * initialize aac encoder
- **/
-JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_init(JNIEnv* env,
+ **/JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_init(JNIEnv* env,
 		jobject thiz, jint bitrate, jint channels, jint sample_rate,
 		jint bits_per_sample, jstring output_path) {
 
@@ -44,7 +43,7 @@ JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_init(JNIEnv* env,
 	mem_operator.Set = cmnMemSet;
 	mem_operator.Check = cmnMemCheck;
 	user_data.memflag = VO_IMF_USERMEMOPERATOR;
-	user_data.memData = (VO_PTR) &mem_operator;
+	user_data.memData = (VO_PTR) & mem_operator;
 	if (codec_api.Init(&handle, VO_AUDIO_CodingAAC, &user_data) != VO_ERR_NONE) {
 		throwJavaException(env, "java/lang/IllegalArgumentException",
 				"Could not init the coding api.");
@@ -65,19 +64,18 @@ JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_init(JNIEnv* env,
 	const char* output_file = (*env)->GetStringUTFChars(env, output_path,
 			(jboolean) 0);
 	outfile = fopen(output_file, "wb");
-	if (outfile == NULL ) {
+	if (outfile == NULL) {
 		throwJavaException(env, "java/lang/IOException",
 				"Could not open the output file.");
 		return;
-	} LOG("writing to %s", output_file);
+	}LOG("writing to %s", output_file);
 	(*env)->ReleaseStringUTFChars(env, output_path, output_file);
 }
 
 /**
  * encode data
- */
-JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_encode(
-		JNIEnv* env, jobject thiz, jbyteArray input_data) {
+ */JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_encode(JNIEnv* env,
+		jobject thiz, jbyteArray input_data) {
 
 	jbyte* buffer = (*env)->GetByteArrayElements(env, input_data, (jboolean) 0);
 	int input_size = (*env)->GetArrayLength(env, input_data);
@@ -117,7 +115,7 @@ JNIEXPORT void JNICALL Java_co_splots_recorder_AACEncoder_encode(
 		if (status == VO_ERR_LICENSE_ERROR)
 			break;
 		count++;
-	} while (count * read_size < input_size && status); LOG("finished output");
+	} while (count * read_size < input_size && status);LOG("finished output");
 	(*env)->ReleaseByteArrayElements(env, input_data, buffer, JNI_ABORT);
 	free(output_buffer);
 }
