@@ -20,6 +20,8 @@ import android.hardware.Camera.Size;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import com.coremedia.iso.boxes.Container;
@@ -148,18 +150,21 @@ public class Recorder implements Camera.PreviewCallback {
 			String h264Path = new StringBuilder(outputPath).append('.').append("h264").toString();
 			try {
 				encoder.init(frameRate, previewSize.width, previewSize.height, new Rect(0, 0, frameSize, frameSize),
-						h264Path);
+						frameSize, frameSize, h264Path);
 				while (!lastData) {
 					concurrentData = viewDataQueue.poll();
 					lastData = (concurrentData == null) && !runVideoThread;
 					if (concurrentData != null) {
-						if (encoder.encode(concurrentData.getData(), concurrentData.getCameraInfo())) {
+						if (encoder.encode(concurrentData.getData(), concurrentData.getCameraInfo(),
+								concurrentData.getTimeStamp())) {
 							if (thumbnail == null) {
-								byte[] thumbnailData = encoder.getThumbnail();
+								byte[] thumbnailData = encoder.getThumbnailData();
 								if (thumbnailData != null) {
-									YuvImage yuvImage = new YuvImage(thumbnailData, ImageFormat.NV21, frameSize, frameSize, null);
+									int width = encoder.getThumbnailWidth();
+									int height = encoder.getThumbnailHeight();
+									YuvImage yuvImage = new YuvImage(thumbnailData, ImageFormat.NV21, width, height, null);
 									ByteArrayOutputStream baos = new ByteArrayOutputStream();
-									yuvImage.compressToJpeg(new Rect(0, 0, frameSize, frameSize), 100, baos);
+									yuvImage.compressToJpeg(new Rect(0, 0, width, height), 100, baos);
 									byte[] jdata = baos.toByteArray();
 									thumbnail = BitmapFactory.decodeByteArray(jdata, 0, jdata.length);
 									File thumbnailFile = new File(
@@ -181,6 +186,7 @@ public class Recorder implements Camera.PreviewCallback {
 
 				encoder.release();
 			} catch (IOException e) {
+				cancel();
 				e.printStackTrace();
 			}
 			Log.d(TAG, "left h264 encoding loop.");
@@ -202,8 +208,8 @@ public class Recorder implements Camera.PreviewCallback {
 				String h264TrackPath = new StringBuilder(outputPath).append('.').append("h264").toString();
 				if (!canceled) {
 					AACTrackImpl aacTrack = new AACTrackImpl(new FileDataSourceImpl(aacTrackPath));
-					H264TrackImpl h264Track = new H264TrackImpl(new FileDataSourceImpl(h264TrackPath), "eng", 1000000,
-							(int) (1000000.f / frameRate));
+					long timeScale = Math.round(frameRate);
+					H264TrackImpl h264Track = new H264TrackImpl(new FileDataSourceImpl(h264TrackPath), "eng", timeScale, 1);
 					Movie movie = new Movie();
 					movie.addTrack(h264Track);
 					movie.addTrack(aacTrack);
@@ -213,9 +219,15 @@ public class Recorder implements Camera.PreviewCallback {
 					fos.close();
 					/*new File(aacTrackPath).delete();
 					new File(h264TrackPath).delete();*/
-					//TODO put this in ui thread
-					if (recordingFinishedListener != null)
-						recordingFinishedListener.onRecordingFinished(new File(outputPath));
+					new Handler(Looper.getMainLooper()).post(new Runnable() {
+
+						@Override
+						public void run() {
+							if (recordingFinishedListener != null)
+								recordingFinishedListener.onRecordingFinished(new File(outputPath));
+						}
+					});
+
 				} else {
 					new File(h264TrackPath).delete();
 					new File(aacTrackPath).delete();
@@ -236,7 +248,6 @@ public class Recorder implements Camera.PreviewCallback {
 	private volatile boolean runVideoThread;
 	private volatile boolean canceled;
 	private int audioSampleRate;
-	//private Context context;
 	private Camera camera;
 	private long maxDuration;
 	private long recordedTime;
@@ -330,7 +341,7 @@ public class Recorder implements Camera.PreviewCallback {
 
 	public void start() {
 		if (!recording) {
-			recordStart = System.nanoTime();
+			recordStart = System.currentTimeMillis();
 			lastRecordedTimeOffset = recordedTime;
 			recording = true;
 		}
@@ -342,11 +353,19 @@ public class Recorder implements Camera.PreviewCallback {
 
 	public void stop() {
 		pause();
-		camera.setPreviewCallback(null);
+		try {
+			camera.setPreviewCallback(null);
+		} catch (Exception e) {}
 		runAudioThread = false;
 		runVideoThread = false;
-		if (recordingStoppedListener != null)
-			recordingStoppedListener.onRecordingStopped();
+		new Handler(Looper.getMainLooper()).post(new Runnable() {
+
+			@Override
+			public void run() {
+				if (recordingStoppedListener != null)
+					recordingStoppedListener.onRecordingStopped();
+			}
+		});
 	}
 
 	public long getRecordDuration() {
@@ -369,7 +388,7 @@ public class Recorder implements Camera.PreviewCallback {
 	@Override
 	public void onPreviewFrame(byte[] data, Camera camera) {
 		if (((maxDuration < 0) || (recordedTime < maxDuration)) && recording) {
-			long currentTime = System.nanoTime();
+			long currentTime = System.currentTimeMillis();
 			long recordDuration = currentTime - recordStart;
 			recordedTime = recordDuration + lastRecordedTimeOffset;
 			viewDataQueue.offer(new VideoData().set(recordedTime, data, cameraInfo));

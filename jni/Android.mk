@@ -10,7 +10,7 @@ LOCAL_PATH := $(MY_PATH)
 include $(CLEAR_VARS)
 LOCAL_MODULE    := wels
 LOCAL_SRC_FILES := openh264/libwels.so
-LOCAL_EXPORT_C_INCLUDES := $(MY_PATH)/include
+LOCAL_EXPORT_C_INCLUDES := $(MY_PATH)/openh264/codec/api
 include $(PREBUILT_SHARED_LIBRARY)
 
 #h264 encoding
