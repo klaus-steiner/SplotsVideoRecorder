@@ -33,6 +33,8 @@ int thumbnail_size;
 int thumbnail_width;
 int thumbnail_height;
 FILE* outfile;
+int frame_count;
+float frame_rate_sum;
 
 void writeInfoToFile(SFrameBSInfo *info) {
 	int i;
@@ -63,54 +65,24 @@ JNIEXPORT void JNICALL Java_co_splots_recorder_H264Encoder_init(JNIEnv* env,
 	src_width = (int) srcWidth;
 	src_height = (int) srcHeight;
 	frame_rate = (float) frameRate;
+	frame_count = 1;
+	frame_rate_sum = 0;
 
 	if (CreateSVCEncoder(&encoder) != cmResultSuccess) {
 		throwJavaException(env, "java/io/IOException",
 				"Couldn't create encoder.");
 		return;
 	}
-	/*SEncParamBase sParam;
-	 memset(&sParam, 0, sizeof(SEncParamBase));*/
-	SEncParamExt sParam;
-	memset(&sParam, 0, sizeof(SEncParamExt));
+	SEncParamBase sParam;
+	memset(&sParam, 0, sizeof(SEncParamBase));
 	sParam.fMaxFrameRate = frame_rate;
 	sParam.iInputCsp = videoFormatI420;
 	sParam.iPicWidth = dest_width;
 	sParam.iPicHeight = dest_height;
 	sParam.iTargetBitrate = 5000000;
 	sParam.iRCMode = 0;
-	sParam.iTemporalLayerNum = 3;
-	sParam.iSpatialLayerNum = 1;
-	sParam.bEnableDenoise = 0;
-	sParam.bEnableBackgroundDetection = 1;
-	sParam.bEnableAdaptiveQuant = 1;
-	sParam.bEnableFrameSkip = 1;
-	sParam.bEnableLongTermReference = 0;
-	sParam.iLtrMarkPeriod = 30;
-	sParam.uiIntraPeriod = 320;
-	sParam.bEnableSpsPpsIdAddition = 1;
-	sParam.bPrefixNalAddingCtrl = 1;
 
-	int spatial_width = dest_width / 2;
-	int spatial_height = dest_height / 2;
-	int i = 0;
-	for (i = 0; i <= 16; i++) {
-		if ((spatial_width % 16) == 0)
-			break;
-		spatial_width++;
-	}
-	for (i = 0; i <= 16; i++) {
-		if ((spatial_height % 16) == 0)
-			break;
-		spatial_height++;
-	}
-	int iIndexLayer = 0;
-	sParam.sSpatialLayers[iIndexLayer].iVideoWidth = spatial_width;
-	sParam.sSpatialLayers[iIndexLayer].iVideoHeight = spatial_height;
-	sParam.sSpatialLayers[iIndexLayer].fFrameRate = frame_rate / 2;
-	sParam.sSpatialLayers[iIndexLayer].iSpatialBitrate = 1000000;
-
-	if ((*encoder)->InitializeExt(encoder, &sParam) != cmResultSuccess) {
+	if ((*encoder)->Initialize(encoder, &sParam) != cmResultSuccess) {
 		throwJavaException(env, "java/io/IOException",
 				"Couldn't initialize encoder.");
 		return;
@@ -145,6 +117,11 @@ JNIEXPORT jint JNICALL Java_co_splots_recorder_H264Encoder_getThumbnailWidth(
 JNIEXPORT jint JNICALL Java_co_splots_recorder_H264Encoder_getThumbnailHeight(
 		JNIEnv* env, jobject thiz) {
 	return thumbnail_height;
+}
+
+JNIEXPORT jfloat JNICALL Java_co_splots_recorder_H264Encoder_getAverageFrameRate(
+		JNIEnv* env, jobject thiz) {
+	return frame_rate_sum / ((float) frame_count);
 }
 
 JNIEXPORT jboolean JNICALL Java_co_splots_recorder_H264Encoder_encode(
@@ -230,9 +207,19 @@ JNIEXPORT jboolean JNICALL Java_co_splots_recorder_H264Encoder_encode(
 	pic.pData[1] = pic.pData[0] + dest_width * dest_height;
 	pic.pData[2] = pic.pData[1] + (scaled_half_size * scaled_half_size);
 
+	float current_frame_rate = ((float) frame_count * 1000)
+			/ ((float) timeStamp);
+	frame_rate_sum += current_frame_rate;
+	LOG("current fps: %f", current_frame_rate);
+	/*if ((*encoder)->SetOption(encoder, ENCODER_OPTION_FRAME_RATE,
+	 (void*) &current_frame_rate) != cmResultSuccess)
+	 LOG("Could not update frame rate.");*/
+
 	EVideoFrameType frameType = (*encoder)->EncodeFrame(encoder, &pic, &info);
 	if (frameType == videoFrameTypeInvalid)
 		return JNI_FALSE;
+	LOG("Frame #%d", frame_count);
+	frame_count++;
 	if (frameType != videoFrameTypeSkip)
 		writeInfoToFile(&info);
 	return JNI_TRUE;

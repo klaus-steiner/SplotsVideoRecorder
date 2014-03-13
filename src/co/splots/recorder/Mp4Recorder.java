@@ -18,6 +18,7 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 
 import com.coremedia.iso.boxes.Container;
 import com.googlecode.mp4parser.FileDataSourceImpl;
@@ -139,8 +140,9 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 				concurrentData = viewDataQueue.poll();
 				lastData = (concurrentData == null) && !runVideoThread;
 				if (concurrentData != null)
-					h264Encoder.encode(concurrentData.getData(), concurrentData.getCameraInfo(),
-							concurrentData.getTimeStamp());
+					if (!h264Encoder.encode(concurrentData.getData(), concurrentData.getCameraInfo(),
+							concurrentData.getTimeStamp()))
+						Log.d("h264 thread", "encoding failed.");
 			}
 			h264Encoder.release();
 		}
@@ -161,7 +163,8 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 				String h264TrackPath = new StringBuilder(outputPath).append('.').append("h264").toString();
 				if (!canceled) {
 					AACTrackImpl aacTrack = new AACTrackImpl(new FileDataSourceImpl(aacTrackPath));
-					long timeScale = Math.round(frameRate);
+					long timeScale = Math.round(h264Encoder.getAverageFrameRate());
+					Log.d("Muxer", "Frame rate: " + String.valueOf(timeScale));
 					H264TrackImpl h264Track = new H264TrackImpl(new FileDataSourceImpl(h264TrackPath), "eng", timeScale, 1);
 					Movie movie = new Movie();
 					movie.addTrack(h264Track);
@@ -220,6 +223,8 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 	private int outputHeight;
 	private Rect crop;
 
+	private int frameCount;
+
 	public Mp4Recorder(String outputPath, int outputWidth, int outputHeight) {
 		this(outputPath, outputWidth, outputHeight, null);
 	}
@@ -240,6 +245,7 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 		this.progressUpdateInterval = -1;
 		this.recording = false;
 		this.canceled = false;
+		this.frameCount = 0;
 		viewDataQueue = new ConcurrentLinkedQueue<VideoData>();
 	}
 
@@ -262,7 +268,7 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 	public void setCamera(Camera camera, CameraInfo info) {
 		this.camera = camera;
 		this.cameraInfo = info;
-		this.camera.setPreviewCallback(this);
+		this.camera.setPreviewCallbackWithBuffer(this);
 	}
 
 	public Bitmap getThumbnail() {
@@ -279,13 +285,17 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 		recording = false;
 		canceled = false;
 		recordStart = 0;
+		frameCount = 0;
 		Parameters cameraParameters = camera.getParameters();
 		previewSize = cameraParameters.getPreviewSize();
+		int previewBufferSize = previewSize.width * previewSize.height + (previewSize.width * previewSize.height + 1) / 2;
 		int[] fpsRange = new int[2];
 		cameraParameters.getPreviewFpsRange(fpsRange);
 		frameRate = ((float) fpsRange[Parameters.PREVIEW_FPS_MAX_INDEX]) / 1000.f;
 		cameraParameters.setPreviewFormat(ImageFormat.NV21);
 		camera.setParameters(cameraParameters);
+		camera.addCallbackBuffer(new byte[previewBufferSize]);
+		camera.addCallbackBuffer(new byte[previewBufferSize]);
 		String h264Path = new StringBuilder(outputPath).append('.').append("h264").toString();
 		String aacPath = new StringBuilder(outputPath).append('.').append("aac").toString();
 		h264Encoder = new H264Encoder();
@@ -301,7 +311,6 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 		AudioRecordRunnable audioRecordRunnable = new AudioRecordRunnable();
 		audioThread = new Thread(audioRecordRunnable, "AudioThread");
 		audioThread.start();
-		camera.setPreviewCallback(this);
 		synchronized (Mp4Recorder.SYNC_AAC_H264) {
 			try {
 				while (!audioRecordRunnable.isReady())
@@ -368,15 +377,24 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 			long currentTime = System.currentTimeMillis();
 			long recordDuration = currentTime - recordStart;
 			recordedTime = recordDuration + lastRecordedTimeOffset;
+			Log.d("recorder", "offer frame #" + String.valueOf(frameCount) + " time_stamp=" + String.valueOf(recordedTime));
+			frameCount++;
 			viewDataQueue.offer(new VideoData().set(recordedTime, data, cameraInfo));
 			if ((progressUpdateListener != null) && (progressUpdateInterval > 0)
 					&& ((lastPublish + progressUpdateInterval) <= currentTime) || lastPublish < 0) {
 				lastPublish = currentTime;
-				progressUpdateListener.onProgressUpdate(recordedTime);
+				new Handler(Looper.getMainLooper()).post(new Runnable() {
+
+					@Override
+					public void run() {
+						progressUpdateListener.onProgressUpdate(recordedTime);
+					}
+				});
 			}
 		} else if (recordedTime >= maxDuration) {
 			recordedTime = maxDuration;
 			stop();
 		}
+		camera.addCallbackBuffer(data);
 	}
 }

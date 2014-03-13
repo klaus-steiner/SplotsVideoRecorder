@@ -68,6 +68,8 @@ public class H264Encoder {
 		return thumbnail;
 	}
 
+	public native float getAverageFrameRate();
+
 	/**
 	 * Release H264 encoder and flush file
 	 */
