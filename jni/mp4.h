@@ -26,6 +26,7 @@ extern "C" {
 class Mp4Encoder {
 public:
 	Mp4Encoder();
+
 	~Mp4Encoder();
 
 	void init(JNIEnv* env, jobject thiz, jstring outPath);

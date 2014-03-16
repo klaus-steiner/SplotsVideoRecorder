@@ -110,23 +110,12 @@ void Mp4Encoder::initVideo(JNIEnv* env, jobject thiz, jfloat frameRate,
 	}
 	h264TrackId = MP4AddH264VideoTrack(mp4FileHandler, 90000,
 			MP4_INVALID_DURATION, videoParameter->iPicWidth,
-			videoParameter->iPicHeight, 66, 0x00, 13, 3);
+			videoParameter->iPicHeight, 0x64, 0x00, 0x1f, 3);
 	if (h264TrackId == MP4_INVALID_TRACK_ID ) {
 		throwJavaException(env, "java/lang/IllegalArgumentException",
 				"Couldn't create h264 track.");
 		return;
 	}
-	/*if (h264Encoder->EncodeParameterSets(h264EncoderInfo) == 0) {
-	 for (int i = 0; i < h264EncoderInfo->iLayerNum; ++i) {
-	 SLayerBSInfo layerInfo = h264EncoderInfo->sLayerInfo[i];
-	 int layerSize = 0;
-	 for (int j = 0; j < layerInfo.iNalCount; ++j)
-	 layerSize += layerInfo.iNalLengthInByte[j];
-	 MP4AddH264PictureParameterSet(mp4FileHandler, h264TrackId,
-	 layerInfo.pBsBuf, layerSize);
-	 }
-	 }*/
-	//MP4SetVideoProfileLevel(mp4FileHandler, 0x7F);
 }
 
 void Mp4Encoder::initAudio(JNIEnv* env, jobject thiz, jint bitrate,
@@ -164,7 +153,7 @@ void Mp4Encoder::initAudio(JNIEnv* env, jobject thiz, jint bitrate,
 				"Couldn't create aac track.");
 		return;
 	}
-	//MP4SetAudioProfileLevel(mp4FileHandler, 0x2);
+	MP4SetAudioProfileLevel(mp4FileHandler, 0x0F);
 }
 
 void Mp4Encoder::setFrameRate(JNIEnv* env, jobject thiz, jfloat frameRate) {
@@ -374,17 +363,22 @@ jboolean Mp4Encoder::encodeAudioSample(JNIEnv* env, jobject thiz,
 				LOG("AAC: output buffer small used_bytes=%d",
 						(int ) outputInfo.InputUsed);
 			else if (status == VO_ERR_NONE) {
-				if (!MP4WriteSample(mp4FileHandler, aacTrackId, outputBuffer,
+				if (!MP4WriteSample(mp4FileHandler, aacTrackId, output.Buffer,
 						output.Length, MP4_INVALID_DURATION, 0, true))
 					success = false;
+				/*MP4WriteSample(mp4FileHandler, aacTrackId, frame + 4,
+				 static_cast<u_int32_t>(frameSize - 4), audioTicks, 0,
+				 KF);*/
 			}
 		} while (status != VO_ERR_INPUT_BUFFER_SMALL);
 		if (status == VO_ERR_LICENSE_ERROR)
 			break;
 		count++;
 	} while (count * readSize < inputSize && status);
+	if (!success)
+		return JNI_FALSE;
 	env->ReleaseByteArrayElements(audio, buffer, JNI_ABORT);
-	return success;
+	return JNI_TRUE;
 }
 
 jbyteArray Mp4Encoder::getThumbnailData(JNIEnv* env, jobject thiz) {
