@@ -113,7 +113,7 @@ void Mp4Encoder::initVideo(JNIEnv* env, jobject thiz, jfloat frameRate,
 				"Couldn't initialize encoder.");
 		return;
 	}
-	MP4SetVideoProfileLevel(mp4FileHandler, 0x7F);
+	//MP4SetVideoProfileLevel(mp4FileHandler, 0x7F);
 	h264Encoder->EncodeParameterSets(h264EncoderInfo);
 	SLayerBSInfo layerInfo = h264EncoderInfo->sLayerInfo[0];
 	int layerSize = 0;
@@ -165,7 +165,7 @@ int Mp4Encoder::initH264Track(unsigned char *input, int inputSize, int offset) {
 				idx++;
 			break;
 		case 0x67: //sps
-			//idx++;
+			idx++;
 			parsedBytes = parseSet(input, inputSize, &sps, idx);
 			/*LOG("sps:");
 			 for (int i = 0; i < parsedBytes; i++)
@@ -178,7 +178,7 @@ int Mp4Encoder::initH264Track(unsigned char *input, int inputSize, int offset) {
 			idx += parsedBytes + 1;
 			break;
 		case 0x68: //pps
-			//idx++;
+			idx++;
 			parsedBytes = parseSet(input, inputSize, &pps, idx);
 			MP4AddH264PictureParameterSet(mp4FileHandler, h264TrackId, pps,
 					parsedBytes);
@@ -422,9 +422,14 @@ jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
 			default:
 				break; /* nothing to mark */
 			}
-			if (!MP4WriteSampleDependency(mp4FileHandler, h264TrackId,
-					layerInfo.pBsBuf, layerSize, 90 * duration, 0, sync,
-					dflags))
+			uint8_t* frame = (uint8_t *) malloc(sizeof(uint8_t) * layerSize);
+			IntToBigEndianByteStream(frame, layerSize - 4);
+			frame += 4;
+			layerInfo.pBsBuf += 4;
+			memcpy(frame, layerInfo.pBsBuf, layerSize - 4);
+			frame -= 4;
+			if (!MP4WriteSampleDependency(mp4FileHandler, h264TrackId, frame,
+					layerSize, 90 * duration, 0, sync, dflags))
 				return JNI_FALSE;
 			/*if (!MP4WriteSample(mp4FileHandler, h264TrackId, layerInfo.pBsBuf,
 			 layerSize, 90 * duration, 0, true))
@@ -432,6 +437,13 @@ jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
 		}
 	}
 	return JNI_TRUE;
+}
+
+void Mp4Encoder::IntToBigEndianByteStream(uint8_t* buffer, uint32_t value) {
+	buffer[0] = value >> 24;
+	buffer[1] = value >> 16;
+	buffer[2] = value >> 8;
+	buffer[3] = value;
 }
 
 jboolean Mp4Encoder::encodeAudioSample(JNIEnv* env, jobject thiz,

@@ -102,6 +102,8 @@ private:
 	int initH264Track(unsigned char *input, int inputSize, int offset);
 
 	inline bool isNALU(unsigned char *input, int inputLength, int offset);
+
+	void IntToBigEndianByteStream(uint8_t *input, uint32_t integer);
 };
 
 #ifdef __cplusplus
