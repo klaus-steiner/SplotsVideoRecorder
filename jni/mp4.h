@@ -91,6 +91,17 @@ private:
 	int cameraOrientation;
 
 	void throwJavaException(JNIEnv* env, const char *name, const char *msg);
+
+	void updateH264EncoderOptions();
+
+	int parseSet(unsigned char *input, int inputLength, unsigned char **set,
+			int offset);
+
+	void initH264Track(unsigned char *input, int inputSize);
+
+	int initH264Track(unsigned char *input, int inputSize, int offset);
+
+	inline bool isNALU(unsigned char *input, int inputLength, int offset);
 };
 
 #ifdef __cplusplus

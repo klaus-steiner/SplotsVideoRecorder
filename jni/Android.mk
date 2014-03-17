@@ -4,7 +4,6 @@ MY_PATH := $(call my-dir)
 include $(MY_PATH)/libyuv/Android.mk
 include $(MY_PATH)/libaacenc/Android.mk
 include $(MY_PATH)/mp4v2/Android.mk
-include $(BUILD_SHARED_LIBRARIES)
 
 #muxer module
 LOCAL_PATH := $(MY_PATH)

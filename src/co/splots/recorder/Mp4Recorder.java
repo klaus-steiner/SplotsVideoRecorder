@@ -268,7 +268,7 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 		encoder = new Mp4Encoder(outputPath);
 		try {
 			encoder.initVideo(frameRate, previewSize.width, previewSize.height, crop, outputWidth, outputHeight);
-			encoder.initAudio(125000, 1, audioSampleRate);
+			encoder.initAudio(124000, 1, audioSampleRate);
 			encoder.setCameraInfo(cameraInfo);
 		} catch (Exception e) {
 			cancel();

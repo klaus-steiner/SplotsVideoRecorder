@@ -73,13 +73,18 @@ void Mp4Encoder::throwJavaException(JNIEnv* env, const char *name,
 
 void Mp4Encoder::init(JNIEnv* env, jobject thiz, jstring outPath) {
 	const char* outputPath = env->GetStringUTFChars(outPath, (jboolean *) 0);
-	mp4FileHandler = MP4Create(outputPath, 0);
+	mp4FileHandler = MP4Create(outputPath);
 	if (mp4FileHandler == MP4_INVALID_FILE_HANDLE ) {
 		throwJavaException(env, "java/lang/IllegalArgumentException",
 				"Could not create mp4 file handler.");
 		return;
 	}
 	env->ReleaseStringUTFChars(outPath, outputPath);
+	if (!(MP4SetTimeScale(mp4FileHandler, 90000))) {
+		throwJavaException(env, "java/lang/IllegalArgumentException",
+				"Could not set time scale.");
+		return;
+	}
 }
 
 void Mp4Encoder::initVideo(JNIEnv* env, jobject thiz, jfloat frameRate,
@@ -108,14 +113,89 @@ void Mp4Encoder::initVideo(JNIEnv* env, jobject thiz, jfloat frameRate,
 				"Couldn't initialize encoder.");
 		return;
 	}
-	h264TrackId = MP4AddH264VideoTrack(mp4FileHandler, 90000,
-			MP4_INVALID_DURATION, videoParameter->iPicWidth,
-			videoParameter->iPicHeight, 0x64, 0x00, 0x1f, 3);
+	MP4SetVideoProfileLevel(mp4FileHandler, 0x7F);
+	h264Encoder->EncodeParameterSets(h264EncoderInfo);
+	SLayerBSInfo layerInfo = h264EncoderInfo->sLayerInfo[0];
+	int layerSize = 0;
+	for (int j = 0; j < layerInfo.iNalCount; ++j)
+		layerSize += layerInfo.iNalLengthInByte[j];
+	initH264Track(layerInfo.pBsBuf, layerSize);
 	if (h264TrackId == MP4_INVALID_TRACK_ID ) {
 		throwJavaException(env, "java/lang/IllegalArgumentException",
 				"Couldn't create h264 track.");
 		return;
 	}
+}
+
+int Mp4Encoder::parseSet(unsigned char *input, int inputLength,
+		unsigned char **set, int offset) {
+	int idx = offset;
+	int setIdx = 0;
+	unsigned char *temp = (unsigned char *) malloc(
+			sizeof(unsigned char) * (inputLength - offset));
+	while (idx <= inputLength) {
+		if (isNALU(input, inputLength, idx) || idx == inputLength) {
+			*set = (unsigned char *) malloc(sizeof(unsigned char) * setIdx);
+			memcpy(*set, temp, setIdx);
+			break;
+		} else {
+			temp[setIdx] = input[idx];
+			idx++;
+			setIdx++;
+		}
+	}
+	return setIdx;
+}
+
+void Mp4Encoder::initH264Track(unsigned char *input, int inputSize) {
+	initH264Track(input, inputSize, 0);
+}
+
+int Mp4Encoder::initH264Track(unsigned char *input, int inputSize, int offset) {
+	int idx = offset;
+	int parsedBytes = 0;
+	unsigned char *sps = (unsigned char *) malloc(sizeof(unsigned char *));
+	unsigned char *pps = (unsigned char *) malloc(sizeof(unsigned char *));
+	while (idx < inputSize) {
+		switch (input[idx]) {
+		case 0x00: //identifing nalu
+			if (isNALU(input, inputSize, idx))
+				idx += initH264Track(input, inputSize, idx + 4);
+			else
+				idx++;
+			break;
+		case 0x67: //sps
+			//idx++;
+			parsedBytes = parseSet(input, inputSize, &sps, idx);
+			/*LOG("sps:");
+			 for (int i = 0; i < parsedBytes; i++)
+			 LOG("0x%02X", sps[i]);*/
+			h264TrackId = MP4AddH264VideoTrack(mp4FileHandler, 90000,
+					MP4_INVALID_DURATION, videoParameter->iPicWidth,
+					videoParameter->iPicHeight, sps[1], sps[2], sps[3], 3);
+			MP4AddH264SequenceParameterSet(mp4FileHandler, h264TrackId, sps,
+					parsedBytes);
+			idx += parsedBytes + 1;
+			break;
+		case 0x68: //pps
+			//idx++;
+			parsedBytes = parseSet(input, inputSize, &pps, idx);
+			MP4AddH264PictureParameterSet(mp4FileHandler, h264TrackId, pps,
+					parsedBytes);
+			idx += parsedBytes + 1;
+			break;
+		default:
+			idx++;
+			break;
+		}
+	}
+	return idx;
+}
+
+bool Mp4Encoder::isNALU(unsigned char *input, int inputLength, int offset) {
+	return inputLength - offset >= 4 && input[offset] == 0x00
+			&& input[offset + 1] == 0x00 && input[offset + 2] == 0x00
+			&& input[offset + 3] == 0x01;
 }
 
 void Mp4Encoder::initAudio(JNIEnv* env, jobject thiz, jint bitrate,
@@ -146,18 +226,28 @@ void Mp4Encoder::initAudio(JNIEnv* env, jobject thiz, jint bitrate,
 				"Unable to set encoding parameters.");
 		return;
 	}
-	aacTrackId = MP4AddAudioTrack(mp4FileHandler, sampleRate, 1,
-			MP4_MPEG4_AUDIO_TYPE);
+	aacTrackId = MP4AddAudioTrack(mp4FileHandler, sampleRate, 1024);
 	if (aacTrackId == MP4_INVALID_TRACK_ID ) {
 		throwJavaException(env, "java/lang/IllegalArgumentException",
 				"Couldn't create aac track.");
 		return;
 	}
+	MP4SetTrackIntegerProperty(mp4FileHandler, aacTrackId,
+			"mdia.minf.stbl.stsd.mp4a.channels", 1);
+	MP4SetTrackIntegerProperty(mp4FileHandler, aacTrackId,
+			"mdia.minf.stbl.stsd.mp4a.sampleSize", 16);
 	MP4SetAudioProfileLevel(mp4FileHandler, 0x0F);
+}
+
+void Mp4Encoder::updateH264EncoderOptions() {
+	if (h264Encoder != NULL && h264TrackId != MP4_INVALID_TRACK_ID )
+		h264Encoder->SetOption(ENCODER_OPTION_SVC_ENCODE_PARAM_BASE,
+				videoParameter);
 }
 
 void Mp4Encoder::setFrameRate(JNIEnv* env, jobject thiz, jfloat frameRate) {
 	videoParameter->fMaxFrameRate = (float) frameRate;
+	updateH264EncoderOptions();
 }
 
 jfloat Mp4Encoder::getAverageFrameRate(JNIEnv* env, jobject thiz) {
@@ -172,6 +262,7 @@ void Mp4Encoder::setPreviewSize(JNIEnv* env, jobject thiz, jint srcWidth,
 
 void Mp4Encoder::setVideoBitrate(JNIEnv* env, jobject thiz, jint bitRate) {
 	videoParameter->iTargetBitrate = (int) bitRate;
+	updateH264EncoderOptions();
 }
 
 void Mp4Encoder::setCropRect(JNIEnv* env, jobject thiz, jobject cropRect) {
@@ -315,9 +406,29 @@ jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
 				layerSize += layerInfo.iNalLengthInByte[j];
 			long duration = timeStamp - lastH264TimeStamp;
 			lastH264TimeStamp = timeStamp;
-			if (!MP4WriteSample(mp4FileHandler, h264TrackId, layerInfo.pBsBuf,
-					layerSize, 90 * duration, 0, true))
+			int sync = 0;
+			uint32_t dflags = 0;
+			switch (frameType) {
+			case videoFrameTypeIDR:
+				sync = 1;
+				break;
+			case videoFrameTypeI:
+				dflags |= MP4_SDT_EARLIER_DISPLAY_TIMES_ALLOWED;
+				break;
+			case videoFrameTypeP:
+				dflags |= MP4_SDT_EARLIER_DISPLAY_TIMES_ALLOWED;
+				break;
+			case videoFrameTypeIPMixed:
+			default:
+				break; /* nothing to mark */
+			}
+			if (!MP4WriteSampleDependency(mp4FileHandler, h264TrackId,
+					layerInfo.pBsBuf, layerSize, 90 * duration, 0, sync,
+					dflags))
 				return JNI_FALSE;
+			/*if (!MP4WriteSample(mp4FileHandler, h264TrackId, layerInfo.pBsBuf,
+			 layerSize, 90 * duration, 0, true))
+			 return JNI_FALSE;*/
 		}
 	}
 	return JNI_TRUE;
@@ -364,11 +475,8 @@ jboolean Mp4Encoder::encodeAudioSample(JNIEnv* env, jobject thiz,
 						(int ) outputInfo.InputUsed);
 			else if (status == VO_ERR_NONE) {
 				if (!MP4WriteSample(mp4FileHandler, aacTrackId, output.Buffer,
-						output.Length, MP4_INVALID_DURATION, 0, true))
+						output.Length, MP4_INVALID_DURATION ))
 					success = false;
-				/*MP4WriteSample(mp4FileHandler, aacTrackId, frame + 4,
-				 static_cast<u_int32_t>(frameSize - 4), audioTicks, 0,
-				 KF);*/
 			}
 		} while (status != VO_ERR_INPUT_BUFFER_SMALL);
 		if (status == VO_ERR_LICENSE_ERROR)
