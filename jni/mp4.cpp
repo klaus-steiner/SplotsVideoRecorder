@@ -165,21 +165,25 @@ int Mp4Encoder::initH264Track(unsigned char *input, int inputSize, int offset) {
 				idx++;
 			break;
 		case 0x67: //sps
-			idx++;
+			//idx++;
 			parsedBytes = parseSet(input, inputSize, &sps, idx);
-			/*LOG("sps:");
-			 for (int i = 0; i < parsedBytes; i++)
-			 LOG("0x%02X", sps[i]);*/
-			h264TrackId = MP4AddH264VideoTrack(mp4FileHandler, 90000,
-					MP4_INVALID_DURATION, videoParameter->iPicWidth,
-					videoParameter->iPicHeight, sps[1], sps[2], sps[3], 3);
+			LOG("sps:");
+			for (int i = 0; i < parsedBytes; i++)
+				LOG("0x%02X", sps[i]);
+			if (h264TrackId == MP4_INVALID_TRACK_ID )
+				h264TrackId = MP4AddH264VideoTrack(mp4FileHandler, 90000,
+						MP4_INVALID_DURATION, videoParameter->iPicWidth,
+						videoParameter->iPicHeight, sps[1], sps[2], sps[3], 3);
 			MP4AddH264SequenceParameterSet(mp4FileHandler, h264TrackId, sps,
 					parsedBytes);
 			idx += parsedBytes + 1;
 			break;
 		case 0x68: //pps
-			idx++;
+			//idx++;
 			parsedBytes = parseSet(input, inputSize, &pps, idx);
+			LOG("pps:");
+			for (int i = 0; i < parsedBytes; i++)
+				LOG("0x%02X", pps[i]);
 			MP4AddH264PictureParameterSet(mp4FileHandler, h264TrackId, pps,
 					parsedBytes);
 			idx += parsedBytes + 1;
@@ -420,20 +424,24 @@ jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
 				break;
 			case videoFrameTypeIPMixed:
 			default:
-				break; /* nothing to mark */
+				break;
 			}
-			uint8_t* frame = (uint8_t *) malloc(sizeof(uint8_t) * layerSize);
-			IntToBigEndianByteStream(frame, layerSize - 4);
-			frame += 4;
-			layerInfo.pBsBuf += 4;
-			memcpy(frame, layerInfo.pBsBuf, layerSize - 4);
-			frame -= 4;
-			if (!MP4WriteSampleDependency(mp4FileHandler, h264TrackId, frame,
-					layerSize, 90 * duration, 0, sync, dflags))
-				return JNI_FALSE;
-			/*if (!MP4WriteSample(mp4FileHandler, h264TrackId, layerInfo.pBsBuf,
-			 layerSize, 90 * duration, 0, true))
-			 return JNI_FALSE;*/
+			if (isNALU(layerInfo.pBsBuf, layerSize, 0)
+					&& (layerInfo.pBsBuf[4] == 0x67
+							|| layerInfo.pBsBuf[4] == 0x68))
+				initH264Track(layerInfo.pBsBuf, layerSize);
+			else {
+				uint8_t* frame = (uint8_t *) malloc(
+						sizeof(uint8_t) * layerSize);
+				IntToBigEndianByteStream(frame, layerSize - 4);
+				frame += 4;
+				layerInfo.pBsBuf += 4;
+				memcpy(frame, layerInfo.pBsBuf, layerSize - 4);
+				frame -= 4;
+				if (!MP4WriteSampleDependency(mp4FileHandler, h264TrackId,
+						frame, layerSize, 90 * duration, 0, sync, dflags))
+					return JNI_FALSE;
+			}
 		}
 	}
 	return JNI_TRUE;
