@@ -62,6 +62,10 @@ public class Mp4Encoder {
 		return thumbnail;
 	}
 
+	public Bitmap getThumbnail(int width, int height) {
+		return null;
+	}
+
 	private native byte[] getThumbnailData();
 
 	private native int getThumbnailWidth();
@@ -71,7 +75,7 @@ public class Mp4Encoder {
 	public native void release();
 
 	static {
-		System.loadLibrary("mp4-encoder");
+		System.loadLibrary("mp4enc");
 	}
 
 }

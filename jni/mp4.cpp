@@ -19,14 +19,13 @@
 #define TAG "mp4-muxer"
 
 Mp4Encoder::Mp4Encoder() {
+	//Setup mp4 file variables
+	mp4FileHandler = NULL;
+	aacTrackId = MP4_INVALID_TRACK_ID;
+	h264TrackId = MP4_INVALID_TRACK_ID;
+	//Set up aac encoder variables
 	aacEncoder = new VO_AUDIO_CODECAPI;
 	memset(aacEncoder, 0, sizeof(VO_AUDIO_CODECAPI));
-	mp4FileHandler = NULL;
-	h264Encoder = NULL;
-	videoParameter = new SEncParamBase;
-	memset(videoParameter, 0, sizeof(SEncParamBase));
-	videoParameter->iTargetBitrate = 5000000;
-	h264EncoderInfo = new SFrameBSInfo;
 	aacMemoryOperator = new VO_MEM_OPERATOR;
 	memset(aacMemoryOperator, 0, sizeof(VO_MEM_OPERATOR));
 	aacUserData = new VO_CODEC_INIT_USERDATA;
@@ -34,33 +33,42 @@ Mp4Encoder::Mp4Encoder() {
 	aacHandle = 0;
 	audioParameter = new AACENC_PARAM;
 	memset(audioParameter, 0, sizeof(AACENC_PARAM));
+	//set up h.264 encoder variables
+	h264Encoder = NULL;
+	videoParameter = new SEncParamBase;
+	memset(videoParameter, 0, sizeof(SEncParamBase));
+	videoParameter->iTargetBitrate = 5000000;
+	h264EncoderInfo = new SFrameBSInfo;
+	//set up image processing variables
+	picture = new Picture;
+	memset(picture, 0, sizeof(Picture));
+	//stuff
 	lastH264TimeStamp = 0;
 	lastAACTimeStamp = 0;
-	aacTrackId = MP4_INVALID_TRACK_ID;
-	h264TrackId = MP4_INVALID_TRACK_ID;
-	cropX = 0;
-	cropY = 0;
-	cropWidth = 0;
-	cropHeight = 0;
-	previewWidth = 0;
-	previewHeight = 0;
-	cameraOrientation = 0;
-	cameraFacing = 0;
 	thumbnail = NULL;
 	thumbnailDataLength = 0;
 	frameRateSum = 0;
 	frameCount = 1;
+	aacESConfig = NULL;
 }
 
+/**
+ * Deconstruct and free allocated memory
+ */
 Mp4Encoder::~Mp4Encoder() {
+	//free aac encoder variables
 	delete aacEncoder;
+	delete audioParameter;
+	delete aacMemoryOperator;
+	delete aacUserData;
+	delete aacESConfig;
+	//free h.264 variables
 	delete h264Encoder;
 	delete videoParameter;
 	delete h264EncoderInfo;
-	delete aacMemoryOperator;
-	delete aacUserData;
-	delete audioParameter;
+
 	delete thumbnail;
+	delete picture;
 }
 
 void Mp4Encoder::throwJavaException(JNIEnv* env, const char *name,
@@ -96,7 +104,8 @@ void Mp4Encoder::initVideo(JNIEnv* env, jobject thiz, jfloat frameRate,
 	videoParameter->iPicWidth = (int) destWidth;
 	videoParameter->iPicHeight = (int) destHeight;
 	videoParameter->iInputCsp = videoFormatI420;
-	videoParameter->iRCMode = 0;
+	videoParameter->iRCMode = RC_BITRATE_MODE;
+	videoParameter->iUsageType = CAMERA_VIDEO_REAL_TIME;
 	lastH264TimeStamp = 0;
 	lastAACTimeStamp = 0;
 	frameCount = 1;
@@ -113,8 +122,12 @@ void Mp4Encoder::initVideo(JNIEnv* env, jobject thiz, jfloat frameRate,
 				"Couldn't initialize encoder.");
 		return;
 	}
-	//MP4SetVideoProfileLevel(mp4FileHandler, 0x7F);
-	h264Encoder->EncodeParameterSets(h264EncoderInfo);
+	MP4SetVideoProfileLevel(mp4FileHandler, 0x7F);
+	if (h264Encoder->EncodeParameterSets(h264EncoderInfo) != cmResultSuccess) {
+		throwJavaException(env, "java/lang/IllegalArgumentException",
+				"Couldn't encode parameter set.");
+		return;
+	}
 	SLayerBSInfo layerInfo = h264EncoderInfo->sLayerInfo[0];
 	int layerSize = 0;
 	for (int j = 0; j < layerInfo.iNalCount; ++j)
@@ -165,11 +178,7 @@ int Mp4Encoder::initH264Track(unsigned char *input, int inputSize, int offset) {
 				idx++;
 			break;
 		case 0x67: //sps
-			//idx++;
 			parsedBytes = parseSet(input, inputSize, &sps, idx);
-			LOG("sps:");
-			for (int i = 0; i < parsedBytes; i++)
-				LOG("0x%02X", sps[i]);
 			if (h264TrackId == MP4_INVALID_TRACK_ID )
 				h264TrackId = MP4AddH264VideoTrack(mp4FileHandler, 90000,
 						MP4_INVALID_DURATION, videoParameter->iPicWidth,
@@ -179,11 +188,7 @@ int Mp4Encoder::initH264Track(unsigned char *input, int inputSize, int offset) {
 			idx += parsedBytes + 1;
 			break;
 		case 0x68: //pps
-			//idx++;
 			parsedBytes = parseSet(input, inputSize, &pps, idx);
-			LOG("pps:");
-			for (int i = 0; i < parsedBytes; i++)
-				LOG("0x%02X", pps[i]);
 			MP4AddH264PictureParameterSet(mp4FileHandler, h264TrackId, pps,
 					parsedBytes);
 			idx += parsedBytes + 1;
@@ -204,6 +209,7 @@ bool Mp4Encoder::isNALU(unsigned char *input, int inputLength, int offset) {
 
 void Mp4Encoder::initAudio(JNIEnv* env, jobject thiz, jint bitrate,
 		jint channels, jint sampleRate) {
+	aacESConfig = NULL;
 	voGetAACEncAPI(aacEncoder);
 	aacMemoryOperator->Alloc = cmnMemAlloc;
 	aacMemoryOperator->Copy = cmnMemCopy;
@@ -212,8 +218,8 @@ void Mp4Encoder::initAudio(JNIEnv* env, jobject thiz, jint bitrate,
 	aacMemoryOperator->Check = cmnMemCheck;
 	aacUserData->memflag = VO_IMF_USERMEMOPERATOR;
 	aacUserData->memData = (VO_PTR) aacMemoryOperator;
-	if (aacEncoder->Init(&aacHandle, VO_AUDIO_CodingAAC,
-			aacUserData) != VO_ERR_NONE) {
+	if (aacEncoder->Init(&aacHandle, VO_AUDIO_CodingAAC, aacUserData)
+			!= VO_ERR_NONE) {
 		throwJavaException(env, "java/lang/IllegalArgumentException",
 				"Could not init aac encoder.");
 		return;
@@ -224,23 +230,74 @@ void Mp4Encoder::initAudio(JNIEnv* env, jobject thiz, jint bitrate,
 	audioParameter->nChannels = channels;
 	audioParameter->adtsUsed = 1;
 
-	if (aacEncoder->SetParam(aacHandle, VO_PID_AAC_ENCPARAM,
-			audioParameter) != VO_ERR_NONE) {
+	if (aacEncoder->SetParam(aacHandle, VO_PID_AAC_ENCPARAM, audioParameter)
+			!= VO_ERR_NONE) {
 		throwJavaException(env, "java/lang/IllegalArgumentException",
 				"Unable to set encoding parameters.");
 		return;
 	}
-	aacTrackId = MP4AddAudioTrack(mp4FileHandler, sampleRate, 1024);
-	if (aacTrackId == MP4_INVALID_TRACK_ID ) {
-		throwJavaException(env, "java/lang/IllegalArgumentException",
-				"Couldn't create aac track.");
+
+	VO_CODECBUFFER input;
+	VO_CODECBUFFER output;
+	VO_AUDIO_OUTPUTINFO outputInfo;
+
+	int readSize = audioParameter->nChannels * 4 * 1024;
+	unsigned char outputBuffer[readSize];
+	input.Buffer = (unsigned char *) malloc(sizeof(unsigned char) * readSize);
+	input.Length = readSize;
+	output.Buffer = outputBuffer;
+	output.Length = readSize;
+	int status = aacEncoder->SetInputData(aacHandle, &input);
+	status = aacEncoder->GetOutputData(aacHandle, &output, &outputInfo);
+	if (status == VO_ERR_NONE) {
+		uint8_t *adtsHeader = (uint8_t *) malloc(sizeof(uint8_t) * 7);
+		adtsHeader = output.Buffer;
+		uint8_t profile = (adtsHeader[2] & 0xc0) >> 6;
+		uint8_t samplingRateIndex = (adtsHeader[2] & 0x3c) >> 2;
+		uint8_t channels = ((adtsHeader[2] & 0x1) << 2)
+				| ((adtsHeader[3] & 0xc0) >> 6);
+		uint8_t mpegVersion = (adtsHeader[1] & 0x08) >> 3;
+		uint8_t audioType = MP4_INVALID_AUDIO_TYPE;
+		switch (mpegVersion) {
+		case 0:
+			audioType = MP4_MPEG4_AUDIO_TYPE;
+			break;
+		case 1:
+			switch (profile) {
+			case 0:
+				audioType = MP4_MPEG2_AAC_MAIN_AUDIO_TYPE;
+				break;
+			case 1:
+				audioType = MP4_MPEG2_AAC_LC_AUDIO_TYPE;
+				break;
+			case 2:
+				audioType = MP4_MPEG2_AAC_SSR_AUDIO_TYPE;
+				break;
+			case 3:
+			default:
+				break;
+			}
+			break;
+		default:
+			break;
+		}
+		aacTrackId = MP4AddAudioTrack(mp4FileHandler, sampleRate,
+				audioParameter->nChannels * 1024, audioType);
+		if (aacTrackId == MP4_INVALID_TRACK_ID ) {
+			throwJavaException(env, "java/lang/IllegalArgumentException",
+					"Couldn't create aac track.");
+			return;
+		}
+		aacESConfig = (uint8_t *) malloc(sizeof(uint8_t) * 2);
+		aacESConfig[0] = ((profile + 1) << 3)
+				| ((samplingRateIndex & 0xe) >> 1);
+		aacESConfig[1] = ((samplingRateIndex & 0x1) << 7) | (channels << 3);
+		MP4SetTrackESConfiguration(mp4FileHandler, aacTrackId, aacESConfig, 2);
+	} else {
+		throwJavaException(env, "java/io/IOException",
+				"Unable to get adts header.");
 		return;
 	}
-	MP4SetTrackIntegerProperty(mp4FileHandler, aacTrackId,
-			"mdia.minf.stbl.stsd.mp4a.channels", 1);
-	MP4SetTrackIntegerProperty(mp4FileHandler, aacTrackId,
-			"mdia.minf.stbl.stsd.mp4a.sampleSize", 16);
-	MP4SetAudioProfileLevel(mp4FileHandler, 0x0F);
 }
 
 void Mp4Encoder::updateH264EncoderOptions() {
@@ -260,8 +317,8 @@ jfloat Mp4Encoder::getAverageFrameRate(JNIEnv* env, jobject thiz) {
 
 void Mp4Encoder::setPreviewSize(JNIEnv* env, jobject thiz, jint srcWidth,
 		jint srcHeight) {
-	previewWidth = (int) srcWidth;
-	previewHeight = (int) srcHeight;
+	picture->previewWidth = (int) srcWidth;
+	picture->previewHeight = (int) srcHeight;
 }
 
 void Mp4Encoder::setVideoBitrate(JNIEnv* env, jobject thiz, jint bitRate) {
@@ -272,21 +329,44 @@ void Mp4Encoder::setVideoBitrate(JNIEnv* env, jobject thiz, jint bitRate) {
 void Mp4Encoder::setCropRect(JNIEnv* env, jobject thiz, jobject cropRect) {
 	jclass outputRectClass = env->GetObjectClass(cropRect);
 	jfieldID fieldId = env->GetFieldID(outputRectClass, "left", "I");
-	cropX = env->GetIntField(cropRect, fieldId);
+	picture->cropX = env->GetIntField(cropRect, fieldId);
 	fieldId = env->GetFieldID(outputRectClass, "top", "I");
-	cropY = env->GetIntField(cropRect, fieldId);
+	picture->cropY = env->GetIntField(cropRect, fieldId);
 	fieldId = env->GetFieldID(outputRectClass, "right", "I");
-	cropWidth = env->GetIntField(cropRect, fieldId) - cropX;
+	picture->cropWidth = env->GetIntField(cropRect, fieldId) - picture->cropX;
 	fieldId = env->GetFieldID(outputRectClass, "bottom", "I");
-	cropHeight = env->GetIntField(cropRect, fieldId) - cropY;
+	picture->cropHeight = env->GetIntField(cropRect, fieldId) - picture->cropY;
 }
 
 void Mp4Encoder::setCameraInfo(JNIEnv* env, jobject thiz, jobject cameraInfo) {
 	jclass cameraInfoClass = env->GetObjectClass(cameraInfo);
 	jfieldID fieldId = env->GetFieldID(cameraInfoClass, "orientation", "I");
-	cameraOrientation = (int) env->GetIntField(cameraInfo, fieldId);
+	int cameraOrientation = (int) env->GetIntField(cameraInfo, fieldId);
 	fieldId = env->GetFieldID(cameraInfoClass, "facing", "I");
-	cameraFacing = (int) env->GetIntField(cameraInfo, fieldId);
+	int cameraFacing = (int) env->GetIntField(cameraInfo, fieldId);
+	int rotate = cameraOrientation;
+	int height = picture->cropHeight;
+	if (cameraFacing == 1) {
+		height = 0 - height;
+		rotate = (rotate + 180) % 360;
+	}
+	switch (rotate) {
+	case 0:
+		picture->rotation = libyuv::kRotate0;
+		break;
+	case 90:
+		picture->rotation = libyuv::kRotate90;
+		break;
+	case 180:
+		picture->rotation = libyuv::kRotate180;
+		break;
+	case 270:
+		picture->rotation = libyuv::kRotate270;
+		break;
+	default:
+		picture->rotation = libyuv::kRotate0;
+		break;
+	}
 }
 
 jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
@@ -300,53 +380,31 @@ jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
 	uint8_t *nv21Input = (uint8_t *) env->GetByteArrayElements(preview,
 			(jboolean *) 0);
 
-	int width = cropWidth;
-	int height = cropHeight;
-	int rotate = cameraOrientation;
+	int width = picture->cropWidth;
+	int height = picture->cropHeight;
 
 	int convertedHalfSize = (width + 1) / 2;
-	uint8 convertI420[width * height + (width * height + 1) / 2];
-	uint8 *convertI420y = convertI420;
-	uint8 *convertI420u = convertI420 + (width * height);
-	uint8 *convertI420v = convertI420u
+	uint8_t convertI420[width * height + (width * height + 1) / 2];
+	uint8_t *convertI420y = convertI420;
+	uint8_t *convertI420u = convertI420 + (width * height);
+	uint8_t *convertI420v = convertI420u
 			+ (convertedHalfSize * convertedHalfSize);
 
-	libyuv::RotationMode rotationMode;
-	if (cameraFacing == 1) {
-		height = 0 - height;
-		rotate = (rotate + 180) % 360;
-	}
-	switch (rotate) {
-	case 0:
-		rotationMode = libyuv::kRotate0;
-		break;
-	case 90:
-		rotationMode = libyuv::kRotate90;
-		break;
-	case 180:
-		rotationMode = libyuv::kRotate180;
-		break;
-	case 270:
-		rotationMode = libyuv::kRotate270;
-		break;
-	default:
-		rotationMode = libyuv::kRotate0;
-		break;
-	}
 	if (libyuv::ConvertToI420(nv21Input, nv21Length, convertI420y, width,
 			convertI420v, convertedHalfSize, convertI420u, convertedHalfSize,
-			cropX, cropY, previewWidth, previewHeight, width, height,
-			rotationMode, libyuv::FOURCC_NV21) != 0)
+			picture->cropX, picture->cropY, picture->previewWidth,
+			picture->previewHeight, width, height, picture->rotation,
+			libyuv::FOURCC_NV21) != 0)
 		return JNI_FALSE;
 	int scaledHalfSize = (videoParameter->iPicWidth + 1) / 2;
 	int scaledDataLength = videoParameter->iPicWidth
 			* videoParameter->iPicHeight
 			+ (videoParameter->iPicWidth * videoParameter->iPicHeight + 1) / 2;
-	uint8 scaledI420[scaledDataLength];
-	uint8* scaledI420y = scaledI420;
-	uint8* scaledI420u = scaledI420
+	uint8_t scaledI420[scaledDataLength];
+	uint8_t* scaledI420y = scaledI420;
+	uint8_t* scaledI420u = scaledI420
 			+ (videoParameter->iPicWidth * videoParameter->iPicHeight);
-	uint8* scaledI420v = scaledI420u + (scaledHalfSize * scaledHalfSize);
+	uint8_t* scaledI420v = scaledI420u + (scaledHalfSize * scaledHalfSize);
 	if (width != videoParameter->iPicWidth
 			|| height != videoParameter->iPicHeight) {
 		if (libyuv::I420Scale(convertI420y, width, convertI420u,
@@ -361,20 +419,20 @@ jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
 		scaledI420u = convertI420u;
 		scaledI420v = convertI420v;
 	}
-	uint8 *frame = (uint8 *) malloc(sizeof(uint8) * scaledDataLength);
-	uint8 *frameY = frame;
-	uint8 *frameU = frameY
+	uint8_t *frame = (uint8_t *) malloc(sizeof(uint8_t) * scaledDataLength);
+	uint8_t *frameY = frame;
+	uint8_t *frameU = frameY
 			+ (videoParameter->iPicWidth * videoParameter->iPicHeight);
-	uint8 *frameV = frameU + (scaledHalfSize * scaledHalfSize);
+	uint8_t *frameV = frameU + (scaledHalfSize * scaledHalfSize);
 	memcpy(frameY, scaledI420y,
 			videoParameter->iPicWidth * videoParameter->iPicHeight);
 	memcpy(frameU, scaledI420v, scaledHalfSize * scaledHalfSize);
 	memcpy(frameV, scaledI420u, scaledHalfSize * scaledHalfSize);
 	if (thumbnail == NULL) {
 		thumbnailDataLength = scaledDataLength;
-		thumbnail = (uint8 *) malloc(sizeof(uint8) * thumbnailDataLength);
-		uint8* thumbnailY = thumbnail;
-		uint8* thumbnailVU = thumbnail
+		thumbnail = (uint8_t *) malloc(sizeof(uint8_t) * thumbnailDataLength);
+		uint8_t* thumbnailY = thumbnail;
+		uint8_t* thumbnailVU = thumbnail
 				+ (videoParameter->iPicWidth * videoParameter->iPicHeight);
 		libyuv::I420ToNV12(scaledI420y, videoParameter->iPicWidth, scaledI420u,
 				scaledHalfSize, scaledI420v, scaledHalfSize, thumbnailY,
@@ -397,61 +455,54 @@ jboolean Mp4Encoder::encodePreviewFrame(JNIEnv* env, jobject thiz,
 
 	float currentFrameRate = ((float) frameCount * 1000) / ((float) timeStamp);
 	frameRateSum += currentFrameRate;
-	LOG("H264: current fps: %f", currentFrameRate);
-	int frameType = h264Encoder->EncodeFrame(&pic, h264EncoderInfo);
-	if (frameType == videoFrameTypeInvalid)
+	if ((h264Encoder->EncodeFrame(&pic, h264EncoderInfo) != cmResultSuccess)
+			|| (h264EncoderInfo->eOutputFrameType == videoFrameTypeInvalid))
 		return JNI_FALSE;
 	frameCount++;
+	int frameType = h264EncoderInfo->eOutputFrameType;
 	if (frameType != videoFrameTypeSkip) {
 		for (int i = 0; i < h264EncoderInfo->iLayerNum; ++i) {
 			SLayerBSInfo layerInfo = h264EncoderInfo->sLayerInfo[i];
 			int layerSize = 0;
 			for (int j = 0; j < layerInfo.iNalCount; ++j)
 				layerSize += layerInfo.iNalLengthInByte[j];
-			long duration = timeStamp - lastH264TimeStamp;
-			lastH264TimeStamp = timeStamp;
-			int sync = 0;
-			uint32_t dflags = 0;
-			switch (frameType) {
-			case videoFrameTypeIDR:
-				sync = 1;
-				break;
-			case videoFrameTypeI:
-				dflags |= MP4_SDT_EARLIER_DISPLAY_TIMES_ALLOWED;
-				break;
-			case videoFrameTypeP:
-				dflags |= MP4_SDT_EARLIER_DISPLAY_TIMES_ALLOWED;
-				break;
-			case videoFrameTypeIPMixed:
-			default:
-				break;
-			}
 			if (isNALU(layerInfo.pBsBuf, layerSize, 0)
 					&& (layerInfo.pBsBuf[4] == 0x67
 							|| layerInfo.pBsBuf[4] == 0x68))
 				initH264Track(layerInfo.pBsBuf, layerSize);
-			else {
-				uint8_t* frame = (uint8_t *) malloc(
-						sizeof(uint8_t) * layerSize);
-				IntToBigEndianByteStream(frame, layerSize - 4);
-				frame += 4;
-				layerInfo.pBsBuf += 4;
-				memcpy(frame, layerInfo.pBsBuf, layerSize - 4);
-				frame -= 4;
+			if (layerInfo.uiLayerType == VIDEO_CODING_LAYER) {
+				int sync = 0;
+				uint32_t dflags = 0;
+				dflags |= MP4_SDT_HAS_NO_DEPENDENTS;
+				switch (frameType) {
+				case videoFrameTypeIDR:
+					sync = 1;
+					break;
+				case videoFrameTypeI:
+					dflags |= MP4_SDT_EARLIER_DISPLAY_TIMES_ALLOWED;
+					break;
+				case videoFrameTypeP:
+					dflags |= MP4_SDT_EARLIER_DISPLAY_TIMES_ALLOWED;
+					break;
+				case videoFrameTypeIPMixed:
+				default:
+					break;
+				}
+				uint32_t nalsize = layerSize - 4;
+				layerInfo.pBsBuf[0] = (nalsize & 0xff000000) >> 24;
+				layerInfo.pBsBuf[1] = (nalsize & 0x00ff0000) >> 16;
+				layerInfo.pBsBuf[2] = (nalsize & 0x0000ff00) >> 8;
+				layerInfo.pBsBuf[3] = nalsize & 0x000000ff;
+				long duration = timeStamp - lastH264TimeStamp;
+				lastH264TimeStamp = timeStamp;
 				if (!MP4WriteSampleDependency(mp4FileHandler, h264TrackId,
-						frame, layerSize, 90 * duration, 0, sync, dflags))
+						layerInfo.pBsBuf, layerSize, 90 * duration, 0, sync,
+						dflags))
 					return JNI_FALSE;
 			}
 		}
 	}
 	return JNI_TRUE;
-}
-
-void Mp4Encoder::IntToBigEndianByteStream(uint8_t* buffer, uint32_t value) {
-	buffer[0] = value >> 24;
-	buffer[1] = value >> 16;
-	buffer[2] = value >> 8;
-	buffer[3] = value;
 }
 
 jboolean Mp4Encoder::encodeAudioSample(JNIEnv* env, jobject thiz,
@@ -494,8 +545,9 @@ jboolean Mp4Encoder::encodeAudioSample(JNIEnv* env, jobject thiz,
 				LOG("AAC: output buffer small used_bytes=%d",
 						(int ) outputInfo.InputUsed);
 			else if (status == VO_ERR_NONE) {
-				if (!MP4WriteSample(mp4FileHandler, aacTrackId, output.Buffer,
-						output.Length, MP4_INVALID_DURATION ))
+				if (!MP4WriteSample(mp4FileHandler, aacTrackId,
+						&output.Buffer[7], output.Length - 7,
+						MP4_INVALID_DURATION, 0, 1))
 					success = false;
 			}
 		} while (status != VO_ERR_INPUT_BUFFER_SMALL);
@@ -507,11 +559,38 @@ jboolean Mp4Encoder::encodeAudioSample(JNIEnv* env, jobject thiz,
 		return JNI_FALSE;
 	env->ReleaseByteArrayElements(audio, buffer, JNI_ABORT);
 	return JNI_TRUE;
+	/*bool success = true;
+	 if (aacEncEncode(aacEncoder, aacInputDesc, aacOutputDesc, aacInArgs,
+	 aacOutArgs) != AACENC_OK) {
+	 uint8_t **sample = (uint8_t **) malloc(sizeof(uint8_t *));
+	 addSampleLength(aacOutputDesc, sample, output.Length);
+	 if (!MP4WriteSample(mp4FileHandler, aacTrackId, *sample, output.Length,
+	 MP4_INVALID_DURATION ))
+	 success = false;
+	 }
+	 env->ReleaseByteArrayElements(audio, buffer, JNI_ABORT);
+	 return success;*/
 }
 
 jbyteArray Mp4Encoder::getThumbnailData(JNIEnv* env, jobject thiz) {
 	if (thumbnail == NULL)
 		return NULL;
+	jbyteArray result = env->NewByteArray(thumbnailDataLength);
+	env->SetByteArrayRegion(result, 0, thumbnailDataLength,
+			(const jbyte *) thumbnail);
+	return result;
+}
+
+jbyteArray Mp4Encoder::getThumbnailData(JNIEnv* env, jobject thiz, jint width,
+		jint height) {
+	if (thumbnail == NULL)
+		return NULL;
+	/*if (libyuv::I420Scale(convertI420y, width, convertI420u, convertedHalfSize,
+	 convertI420v, convertedHalfSize, width, height, scaledI420y,
+	 videoParameter->iPicWidth, scaledI420u, scaledHalfSize, scaledI420v,
+	 scaledHalfSize, videoParameter->iPicWidth,
+	 videoParameter->iPicHeight, libyuv::kFilterNone) != 0)
+	 return JNI_FALSE;*/
 	jbyteArray result = env->NewByteArray(thumbnailDataLength);
 	env->SetByteArrayRegion(result, 0, thumbnailDataLength,
 			(const jbyte *) thumbnail);

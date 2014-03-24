@@ -35,22 +35,14 @@ int ConvertToARGB(const uint8* sample, size_t sample_size,
                   int crop_x, int crop_y,
                   int src_width, int src_height,
                   int crop_width, int crop_height,
-                  RotationMode rotation,
+                  enum RotationMode rotation,
                   uint32 fourcc) {
   uint32 format = CanonicalFourCC(fourcc);
-  if (crop_argb == NULL || sample == NULL ||
-      src_width <= 0 || crop_width <= 0 ||
-      src_height == 0 || crop_height == 0) {
-    return -1;
-  }
   int aligned_src_width = (src_width + 1) & ~1;
   const uint8* src;
   const uint8* src_uv;
   int abs_src_height = (src_height < 0) ? -src_height : src_height;
   int inv_crop_height = (crop_height < 0) ? -crop_height : crop_height;
-  if (src_height < 0) {
-    inv_crop_height = -inv_crop_height;
-  }
   int r = 0;
 
   // One pass rotation is available for some formats. For the rest, convert
@@ -58,14 +50,25 @@ int ConvertToARGB(const uint8* sample, size_t sample_size,
   // and then rotate the I420 to the final destination buffer.
   // For in-place conversion, if destination crop_argb is same as source sample,
   // also enable temporary buffer.
-  bool need_buf = (rotation && format != FOURCC_ARGB) || crop_argb == sample;
+  LIBYUV_BOOL need_buf = (rotation && format != FOURCC_ARGB) ||
+      crop_argb == sample;
   uint8* tmp_argb = crop_argb;
   int tmp_argb_stride = argb_stride;
   uint8* rotate_buffer = NULL;
   int abs_crop_height = (crop_height < 0) ? -crop_height : crop_height;
+
+  if (crop_argb == NULL || sample == NULL ||
+      src_width <= 0 || crop_width <= 0 ||
+      src_height == 0 || crop_height == 0) {
+    return -1;
+  }
+  if (src_height < 0) {
+    inv_crop_height = -inv_crop_height;
+  }
+
   if (need_buf) {
     int argb_size = crop_width * abs_crop_height * 4;
-    rotate_buffer = new uint8[argb_size];
+    rotate_buffer = (uint8*)malloc(argb_size);
     if (!rotate_buffer) {
       return 1;  // Out of memory runtime error.
     }
@@ -312,7 +315,7 @@ int ConvertToARGB(const uint8* sample, size_t sample_size,
                      tmp_argb, tmp_argb_stride,
                      crop_width, abs_crop_height, rotation);
     }
-    delete [] rotate_buffer;
+    free(rotate_buffer);
   }
 
   return r;

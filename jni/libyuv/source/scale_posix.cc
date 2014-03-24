@@ -122,7 +122,7 @@ void ScaleRowDown2_SSE2(const uint8* src_ptr, ptrdiff_t src_stride,
   );
 }
 
-void ScaleRowDown2Linear_SSE2(const uint8* src_ptr, ptrdiff_t,
+void ScaleRowDown2Linear_SSE2(const uint8* src_ptr, ptrdiff_t src_stride,
                               uint8* dst_ptr, int dst_width) {
   asm volatile (
     "pcmpeqb   %%xmm5,%%xmm5                   \n"
@@ -189,7 +189,7 @@ void ScaleRowDown2Box_SSE2(const uint8* src_ptr, ptrdiff_t src_stride,
   : "+r"(src_ptr),    // %0
     "+r"(dst_ptr),    // %1
     "+r"(dst_width)   // %2
-  : "r"(static_cast<intptr_t>(src_stride))   // %3
+  : "r"((intptr_t)(src_stride))   // %3
   : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
     , "r14"
@@ -200,8 +200,7 @@ void ScaleRowDown2Box_SSE2(const uint8* src_ptr, ptrdiff_t src_stride,
   );
 }
 
-void ScaleRowDown2_Unaligned_SSE2(const uint8* src_ptr,
-                                  ptrdiff_t src_stride,
+void ScaleRowDown2_Unaligned_SSE2(const uint8* src_ptr, ptrdiff_t src_stride,
                                   uint8* dst_ptr, int dst_width) {
   asm volatile (
     LABELALIGN
@@ -227,7 +226,8 @@ void ScaleRowDown2_Unaligned_SSE2(const uint8* src_ptr,
   );
 }
 
-void ScaleRowDown2Linear_Unaligned_SSE2(const uint8* src_ptr, ptrdiff_t,
+void ScaleRowDown2Linear_Unaligned_SSE2(const uint8* src_ptr,
+                                        ptrdiff_t src_stride,
                                         uint8* dst_ptr, int dst_width) {
   asm volatile (
     "pcmpeqb   %%xmm5,%%xmm5                   \n"
@@ -295,7 +295,7 @@ void ScaleRowDown2Box_Unaligned_SSE2(const uint8* src_ptr,
   : "+r"(src_ptr),    // %0
     "+r"(dst_ptr),    // %1
     "+r"(dst_width)   // %2
-  : "r"(static_cast<intptr_t>(src_stride))   // %3
+  : "r"((intptr_t)(src_stride))   // %3
   : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
     , "r14"
@@ -387,7 +387,7 @@ void ScaleRowDown4Box_SSE2(const uint8* src_ptr, ptrdiff_t src_stride,
     "+r"(dst_ptr),     // %1
     "+r"(dst_width),   // %2
     "+r"(stridex3)     // %3
-  : "r"(static_cast<intptr_t>(src_stride))    // %4
+  : "r"((intptr_t)(src_stride))    // %4
   : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
     , "r14"
@@ -496,7 +496,7 @@ void ScaleRowDown34_1_Box_SSSE3(const uint8* src_ptr,
   : "+r"(src_ptr),   // %0
     "+r"(dst_ptr),   // %1
     "+r"(dst_width)  // %2
-  : "r"(static_cast<intptr_t>(src_stride)),  // %3
+  : "r"((intptr_t)(src_stride)),  // %3
     "m"(kMadd21)     // %4
   : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
@@ -570,7 +570,7 @@ void ScaleRowDown34_0_Box_SSSE3(const uint8* src_ptr,
     : "+r"(src_ptr),   // %0
       "+r"(dst_ptr),   // %1
       "+r"(dst_width)  // %2
-    : "r"(static_cast<intptr_t>(src_stride)),  // %3
+    : "r"((intptr_t)(src_stride)),  // %3
       "m"(kMadd21)     // %4
     : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
@@ -652,7 +652,7 @@ void ScaleRowDown38_2_Box_SSSE3(const uint8* src_ptr,
   : "+r"(src_ptr),     // %0
     "+r"(dst_ptr),     // %1
     "+r"(dst_width)    // %2
-  : "r"(static_cast<intptr_t>(src_stride))  // %3
+  : "r"((intptr_t)(src_stride))  // %3
   : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
     , "r14"
@@ -720,7 +720,7 @@ void ScaleRowDown38_3_Box_SSSE3(const uint8* src_ptr,
   : "+r"(src_ptr),    // %0
     "+r"(dst_ptr),    // %1
     "+r"(dst_width)   // %2
-  : "r"(static_cast<intptr_t>(src_stride))   // %3
+  : "r"((intptr_t)(src_stride))   // %3
   : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
     , "r14"
@@ -777,7 +777,7 @@ void ScaleAddRows_SSE2(const uint8* src_ptr, ptrdiff_t src_stride,
     "+r"(tmp_src),     // %3
     "+r"(src_width),   // %4
     "+rm"(src_height)  // %5
-  : "rm"(static_cast<intptr_t>(src_stride))  // %6
+  : "rm"((intptr_t)(src_stride))  // %6
   : "memory", "cc"
 #if defined(__SSE2__)
     , "xmm0", "xmm1", "xmm2", "xmm3", "xmm4"
@@ -866,7 +866,7 @@ void ScaleFilterCols_SSSE3(uint8* dst_ptr, const uint8* src_ptr,
 // Reads 4 pixels, duplicates them and writes 8 pixels.
 // Alignment requirement: src_argb 16 byte aligned, dst_argb 16 byte aligned.
 void ScaleColsUp2_SSE2(uint8* dst_ptr, const uint8* src_ptr,
-                       int dst_width, int /* x */, int /* dx */) {
+                       int dst_width, int x, int dx) {
   asm volatile (
     LABELALIGN
   "1:                                          \n"
@@ -893,7 +893,7 @@ void ScaleColsUp2_SSE2(uint8* dst_ptr, const uint8* src_ptr,
 }
 
 void ScaleARGBRowDown2_SSE2(const uint8* src_argb,
-                            ptrdiff_t /* src_stride */,
+                            ptrdiff_t src_stride,
                             uint8* dst_argb, int dst_width) {
   asm volatile (
     LABELALIGN
@@ -918,7 +918,7 @@ void ScaleARGBRowDown2_SSE2(const uint8* src_argb,
 }
 
 void ScaleARGBRowDown2Linear_SSE2(const uint8* src_argb,
-                                  ptrdiff_t /* src_stride */,
+                                  ptrdiff_t src_stride,
                                   uint8* dst_argb, int dst_width) {
   asm volatile (
     LABELALIGN
@@ -970,7 +970,7 @@ void ScaleARGBRowDown2Box_SSE2(const uint8* src_argb,
   : "+r"(src_argb),   // %0
     "+r"(dst_argb),   // %1
     "+r"(dst_width)   // %2
-  : "r"(static_cast<intptr_t>(src_stride))   // %3
+  : "r"((intptr_t)(src_stride))   // %3
   : "memory", "cc"
 #if defined(__native_client__) && defined(__x86_64__)
     , "r14"
@@ -986,7 +986,7 @@ void ScaleARGBRowDown2Box_SSE2(const uint8* src_argb,
 void ScaleARGBRowDownEven_SSE2(const uint8* src_argb, ptrdiff_t src_stride,
                                int src_stepx,
                                uint8* dst_argb, int dst_width) {
-  intptr_t src_stepx_x4 = static_cast<intptr_t>(src_stepx);
+  intptr_t src_stepx_x4 = (intptr_t)(src_stepx);
   intptr_t src_stepx_x12 = 0;
   asm volatile (
     "lea       " MEMLEA3(0x00,1,4) ",%1        \n"
@@ -1027,9 +1027,9 @@ void ScaleARGBRowDownEven_SSE2(const uint8* src_argb, ptrdiff_t src_stride,
 void ScaleARGBRowDownEvenBox_SSE2(const uint8* src_argb,
                                   ptrdiff_t src_stride, int src_stepx,
                                   uint8* dst_argb, int dst_width) {
-  intptr_t src_stepx_x4 = static_cast<intptr_t>(src_stepx);
+  intptr_t src_stepx_x4 = (intptr_t)(src_stepx);
   intptr_t src_stepx_x12 = 0;
-  intptr_t row1 = static_cast<intptr_t>(src_stride);
+  intptr_t row1 = (intptr_t)(src_stride);
   asm volatile (
     "lea       " MEMLEA3(0x00,1,4) ",%1        \n"
     "lea       " MEMLEA4(0x00,1,1,2) ",%4      \n"
@@ -1152,7 +1152,7 @@ void ScaleARGBCols_SSE2(uint8* dst_argb, const uint8* src_argb,
 // Reads 4 pixels, duplicates them and writes 8 pixels.
 // Alignment requirement: src_argb 16 byte aligned, dst_argb 16 byte aligned.
 void ScaleARGBColsUp2_SSE2(uint8* dst_argb, const uint8* src_argb,
-                           int dst_width, int /* x */, int /* dx */) {
+                           int dst_width, int x, int dx) {
   asm volatile (
     LABELALIGN
   "1:                                          \n"
@@ -1272,6 +1272,39 @@ void ScaleARGBFilterCols_SSSE3(uint8* dst_argb, const uint8* src_argb,
     , "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6"
 #endif
   );
+}
+
+// Divide num by div and return as 16.16 fixed point result.
+int FixedDiv_X86(int num, int div) {
+  asm volatile (
+    "cdq                                       \n"
+    "shld      $0x10,%%eax,%%edx               \n"
+    "shl       $0x10,%%eax                     \n"
+    "idiv      %1                              \n"
+    "mov       %0, %%eax                       \n"
+    : "+a"(num)  // %0
+    : "c"(div)   // %1
+    : "memory", "cc", "edx"
+  );
+  return num;
+}
+
+// Divide num - 1 by div - 1 and return as 16.16 fixed point result.
+int FixedDiv1_X86(int num, int div) {
+  asm volatile (
+    "cdq                                       \n"
+    "shld      $0x10,%%eax,%%edx               \n"
+    "shl       $0x10,%%eax                     \n"
+    "sub       $0x10001,%%eax                  \n"
+    "sbb       $0x0,%%edx                      \n"
+    "sub       $0x1,%1                         \n"
+    "idiv      %1                              \n"
+    "mov       %0, %%eax                       \n"
+    : "+a"(num)  // %0
+    : "c"(div)   // %1
+    : "memory", "cc", "edx"
+  );
+  return num;
 }
 
 #endif  // defined(__x86_64__) || defined(__i386__)

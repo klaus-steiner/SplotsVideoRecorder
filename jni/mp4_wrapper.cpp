@@ -76,6 +76,11 @@ JNIEXPORT jbyteArray JNICALL Java_co_splots_recorder_Mp4Encoder_getThumbnailData
 	return encoder->getThumbnailData(env, thiz);
 }
 
+/*JNIEXPORT jbyteArray JNICALL Java_co_splots_recorder_Mp4Encoder_getThumbnailData(
+ JNIEnv* env, jobject thiz, jint width, jint height) {
+ return encoder->getThumbnailData(env, thiz, width, height);
+ }*/
+
 JNIEXPORT jint JNICALL Java_co_splots_recorder_Mp4Encoder_getThumbnailWidth(
 		JNIEnv* env, jobject thiz) {
 	return encoder->getThumbnailWidth(env, thiz);

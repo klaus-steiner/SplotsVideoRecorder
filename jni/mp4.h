@@ -15,14 +15,43 @@
 #include <android/log.h>
 #include "openh264/codec/api/svc/codec_api.h"
 #include "mp4v2/include/mp4v2/mp4v2.h"
-#include "libaacenc/inc/voAAC.h"
+//#include "fdk-aac/libAACenc/include/aacenc_lib.h"
 #include "libaacenc/inc/cmnMemory.h"
+#include "libaacenc/inc/voAAC.h"
 #include "libyuv/include/libyuv.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/**
+ * Parameter for image processing
+ */
+typedef struct {
+	int previewWidth; /*!< width out the input frame. you get this value with
+	 Camera.getParameters().getPreviewSize().width */
+
+	int previewHeight; /*!< height out the input frame. you get this value with
+	 Camera.getParameters().getPreviewSize().height */
+
+	int cropX; /*!< x offset of the preview frame from which the data should
+	 be used. */
+
+	int cropY; /*!< y offset of the preview frame from which the data should
+	 be used.*/
+
+	int cropWidth; /*!< with of the */
+
+	int cropHeight; /*!< x offset of the preview frame*/
+
+	libyuv::RotationMode rotation;
+
+} Picture;
+
+/**
+ * Class for encode Android preview frames and
+ * audio samples into an mp4 file container.
+ */
 class Mp4Encoder {
 public:
 	Mp4Encoder();
@@ -57,6 +86,9 @@ public:
 
 	jbyteArray getThumbnailData(JNIEnv* env, jobject thiz);
 
+	jbyteArray getThumbnailData(JNIEnv* env, jobject thiz, jint width,
+			jint height);
+
 	jint getThumbnailWidth(JNIEnv* env, jobject thiz);
 
 	jint getThumbnailHeight(JNIEnv* env, jobject thiz);
@@ -75,20 +107,17 @@ private:
 	SFrameBSInfo *h264EncoderInfo;
 	MP4TrackId h264TrackId;
 	MP4TrackId aacTrackId;
-	uint8 *thumbnail;
+	uint8_t *thumbnail;
+	uint8_t *thumbnailY;
+	uint8_t *thumbnailU;
+	uint8_t *thumbnailV;
 	float frameRateSum;
 	int frameCount;
 	int thumbnailDataLength;
 	long lastH264TimeStamp;
 	long lastAACTimeStamp;
-	int previewWidth;
-	int previewHeight;
-	int cropX;
-	int cropY;
-	int cropWidth;
-	int cropHeight;
-	int cameraFacing;
-	int cameraOrientation;
+	Picture *picture;
+	uint8_t *aacESConfig;
 
 	void throwJavaException(JNIEnv* env, const char *name, const char *msg);
 
@@ -103,7 +132,6 @@ private:
 
 	inline bool isNALU(unsigned char *input, int inputLength, int offset);
 
-	void IntToBigEndianByteStream(uint8_t *input, uint32_t integer);
 };
 
 #ifdef __cplusplus

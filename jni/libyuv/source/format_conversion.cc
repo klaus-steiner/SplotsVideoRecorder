@@ -22,10 +22,10 @@ extern "C" {
 
 // generate a selector mask useful for pshufb
 static uint32 GenerateSelector(int select0, int select1) {
-  return static_cast<uint32>(select0) |
-         static_cast<uint32>((select1 + 4) << 8) |
-         static_cast<uint32>((select0 + 8) << 16) |
-         static_cast<uint32>((select1 + 12) << 24);
+  return (uint32)(select0) |
+         (uint32)((select1 + 4) << 8) |
+         (uint32)((select0 + 8) << 16) |
+         (uint32)((select1 + 12) << 24);
 }
 
 static int MakeSelectors(const int blue_index,
@@ -280,16 +280,13 @@ int BayerToARGB(const uint8* src_bayer, int src_stride_bayer,
 }
 
 // Converts any Bayer RGB format to ARGB.
-LIBYUV_API SAFEBUFFERS
+LIBYUV_API
 int BayerToI420(const uint8* src_bayer, int src_stride_bayer,
                 uint8* dst_y, int dst_stride_y,
                 uint8* dst_u, int dst_stride_u,
                 uint8* dst_v, int dst_stride_v,
                 int width, int height,
                 uint32 src_fourcc_bayer) {
-  if (width * 4 > kMaxStride) {
-    return -1;  // Size too large for row buffer
-  }
   // Negative height means invert the image.
   if (height < 0) {
     height = -height;
@@ -358,14 +355,16 @@ int BayerToI420(const uint8* src_bayer, int src_stride_bayer,
       return -1;  // Bad FourCC
   }
 
-  SIMD_ALIGNED(uint8 row[kMaxStride * 2]);
+  // Allocate 2 rows of ARGB.
+  const int kRowSize = (width * 4 + 15) & ~15;
+  align_buffer_64(row, kRowSize * 2);
   for (int y = 0; y < height - 1; y += 2) {
     BayerRow0(src_bayer, src_stride_bayer, row, width);
     BayerRow1(src_bayer + src_stride_bayer, -src_stride_bayer,
-              row + kMaxStride, width);
-    ARGBToUVRow(row, kMaxStride, dst_u, dst_v, width);
+              row + kRowSize, width);
+    ARGBToUVRow(row, kRowSize, dst_u, dst_v, width);
     ARGBToYRow(row, dst_y, width);
-    ARGBToYRow(row + kMaxStride, dst_y + dst_stride_y, width);
+    ARGBToYRow(row + kRowSize, dst_y + dst_stride_y, width);
     src_bayer += src_stride_bayer * 2;
     dst_y += dst_stride_y * 2;
     dst_u += dst_stride_u;
@@ -376,20 +375,18 @@ int BayerToI420(const uint8* src_bayer, int src_stride_bayer,
     ARGBToUVRow(row, 0, dst_u, dst_v, width);
     ARGBToYRow(row, dst_y, width);
   }
+  free_aligned_buffer_64(row);
   return 0;
 }
 
 // Convert I420 to Bayer.
-LIBYUV_API SAFEBUFFERS
+LIBYUV_API
 int I420ToBayer(const uint8* src_y, int src_stride_y,
                 const uint8* src_u, int src_stride_u,
                 const uint8* src_v, int src_stride_v,
                 uint8* dst_bayer, int dst_stride_bayer,
                 int width, int height,
                 uint32 dst_fourcc_bayer) {
-  if (width * 4 > kMaxStride) {
-    return -1;  // Size too large for row buffer
-  }
   // Negative height means invert the image.
   if (height < 0) {
     height = -height;
@@ -439,7 +436,6 @@ int I420ToBayer(const uint8* src_y, int src_stride_y,
   }
 #endif
 
-  SIMD_ALIGNED(uint8 row[kMaxStride]);
   void (*ARGBToBayerRow)(const uint8* src_argb, uint8* dst_bayer,
                          uint32 selector, int pix) = ARGBToBayerRow_C;
 #if defined(HAS_ARGBTOBAYERROW_SSSE3)
@@ -466,7 +462,8 @@ int I420ToBayer(const uint8* src_y, int src_stride_y,
                     dst_fourcc_bayer, index_map)) {
     return -1;  // Bad FourCC
   }
-
+  // Allocate a row of ARGB.
+  align_buffer_64(row, width * 4);
   for (int y = 0; y < height; ++y) {
     I422ToARGBRow(src_y, src_u, src_v, row, width);
     ARGBToBayerRow(row, dst_bayer, index_map[y & 1], width);
@@ -477,6 +474,7 @@ int I420ToBayer(const uint8* src_y, int src_stride_y,
       src_v += src_stride_v;
     }
   }
+  free_aligned_buffer_64(row);
   return 0;
 }
 

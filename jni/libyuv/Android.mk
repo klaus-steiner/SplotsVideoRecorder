@@ -49,8 +49,8 @@ endif
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
 
-LOCAL_MODULE := libyuv_static
+LOCAL_MODULE := libyuv
 LOCAL_MODULE_TAGS := optional
 
-include $(BUILD_STATIC_LIBRARY)
+include $(BUILD_SHARED_LIBRARY)
 

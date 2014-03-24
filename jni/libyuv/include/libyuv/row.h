@@ -11,6 +11,8 @@
 #ifndef INCLUDE_LIBYUV_ROW_H_  // NOLINT
 #define INCLUDE_LIBYUV_ROW_H_
 
+#include <stdlib.h>  // For malloc.
+
 #include "libyuv/basic_types.h"
 
 #ifdef __cplusplus
@@ -18,15 +20,24 @@ namespace libyuv {
 extern "C" {
 #endif
 
-// TODO(fbarchard): Remove kMaxStride.
-#ifdef __arm__
-#define kMaxStride (1920 * 4)
-#else
-#define kMaxStride (4096 * 4)
-#endif
 #define IS_ALIGNED(p, a) (!((uintptr_t)(p) & ((a) - 1)))
 
-#if defined(__CLR_VER) || defined(COVERAGE_ENABLED) || \
+#ifdef __cplusplus
+#define align_buffer_64(var, size)                                             \
+  uint8* var##_mem = reinterpret_cast<uint8*>(malloc((size) + 63));            \
+  uint8* var = reinterpret_cast<uint8*>                                        \
+      ((reinterpret_cast<intptr_t>(var##_mem) + 63) & ~63)
+#else
+#define align_buffer_64(var, size)                                             \
+  uint8* var##_mem = (uint8*)(malloc((size) + 63));               /* NOLINT */ \
+  uint8* var = (uint8*)(((intptr_t)(var##_mem) + 63) & ~63)       /* NOLINT */
+#endif
+
+#define free_aligned_buffer_64(var) \
+  free(var##_mem);  \
+  var = 0
+
+#if defined(__pnacl__) || defined(__CLR_VER) || defined(COVERAGE_ENABLED) || \
     defined(TARGET_IPHONE_SIMULATOR)
 #define LIBYUV_DISABLE_X86
 #endif
@@ -36,7 +47,7 @@ extern "C" {
 #endif
 
 // Enable for NaCL pepper 33 for bundle and AVX2 support.
-//#define NEW_BINUTILS
+//  #define NEW_BINUTILS
 
 // The following are available on all x86 platforms:
 #if !defined(LIBYUV_DISABLE_X86) && \
@@ -96,7 +107,6 @@ extern "C" {
 #define HAS_COPYROW_ERMS
 #define HAS_COPYROW_SSE2
 #define HAS_COPYROW_X86
-#define HAS_FIXEDDIV_X86
 #define HAS_HALFROW_SSE2
 #define HAS_I400TOARGBROW_SSE2
 #define HAS_I411TOARGBROW_SSSE3
@@ -432,14 +442,6 @@ typedef uint8 uvec8[16];
     #opcode " %%" #reg ","#offset "(%" #base ",%" #index "," #scale ")\n"
 #define MEMOPARG(opcode, offset, base, index, scale, arg) \
     #opcode " " #offset "(%" #base ",%" #index "," #scale "),%" #arg "\n"
-#endif
-
-// For functions that use rowbuffer and have runtime checks for overflow,
-// use SAFEBUFFERS to avoid additional check.
-#if defined(_MSC_VER) && (_MSC_FULL_VER >= 160040219)
-#define SAFEBUFFERS __declspec(safebuffers)
-#else
-#define SAFEBUFFERS
 #endif
 
 void I444ToARGBRow_NEON(const uint8* src_y,
@@ -1679,19 +1681,10 @@ void ARGBPolynomialRow_AVX2(const uint8* src_argb,
                             int width);
 
 void ARGBLumaColorTableRow_C(const uint8* src_argb, uint8* dst_argb, int width,
-                             const uint8* luma, const uint32 lumacoeff);
+                             const uint8* luma, uint32 lumacoeff);
 void ARGBLumaColorTableRow_SSSE3(const uint8* src_argb, uint8* dst_argb,
-                                 int width, const uint8* luma,
-                                 const uint32 lumacoeff);
-
-// Divide num by div and return as 16.16 fixed point result.
-int FixedDiv_C(int num, int div);
-int FixedDiv_X86(int num, int div);
-#ifdef HAS_FIXEDDIV_X86
-#define FixedDiv FixedDiv_X86
-#else
-#define FixedDiv FixedDiv_C
-#endif
+                                 int width,
+                                 const uint8* luma, uint32 lumacoeff);
 
 #ifdef __cplusplus
 }  // extern "C"

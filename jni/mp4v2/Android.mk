@@ -106,4 +106,4 @@ LOCAL_SRC_FILES = \
     libplatform/process/process_posix.cpp  \
     libplatform/time/time_posix.cpp \
 
-include $(BUILD_STATIC_LIBRARY)
+include $(BUILD_SHARED_LIBRARY)

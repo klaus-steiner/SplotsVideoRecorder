@@ -27,7 +27,7 @@
 								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.1263031204" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.base.1767831920" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.base">
-								<option id="gnu.cpp.compiler.option.include.paths.1405873467" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
+								<option id="gnu.cpp.compiler.option.include.paths.1405873467" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;${NDK_PATH}/platforms/android-18/arch-arm/usr/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${NDK_PATH}/platforms/android-8/arch-arm/usr/include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${NDK_PATH}/platforms/android-18/arch-x86/usr/include&quot;"/>
