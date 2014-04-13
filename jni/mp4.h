@@ -46,6 +46,8 @@ typedef struct {
 
 	libyuv::RotationMode rotation;
 
+	int cameraFacing;
+
 } Picture;
 
 /**
@@ -96,12 +98,18 @@ public:
 	void release(JNIEnv* env, jobject thiz);
 
 private:
-	ISVCEncoder *h264Encoder;
+
 	VO_AUDIO_CODECAPI *aacEncoder;
 	VO_MEM_OPERATOR *aacMemoryOperator;
 	VO_CODEC_INIT_USERDATA *aacUserData;
 	VO_HANDLE aacHandle;
+	VO_CODECBUFFER *aacInputBuffer;
+	VO_CODECBUFFER *aacOutputBuffer;
+	VO_AUDIO_OUTPUTINFO *aacOutputInfo;
 	AACENC_PARAM *audioParameter;
+	const char* outputPath;
+
+	ISVCEncoder *h264Encoder;
 	MP4FileHandle mp4FileHandler;
 	SEncParamBase *videoParameter;
 	SFrameBSInfo *h264EncoderInfo;
@@ -117,7 +125,9 @@ private:
 	long lastH264TimeStamp;
 	long lastAACTimeStamp;
 	Picture *picture;
-	uint8_t *aacESConfig;
+	uint8_t aacESConfig[2];
+	bool audioEncoderIsFine;
+	bool videoEncoderIsFine;
 
 	void throwJavaException(JNIEnv* env, const char *name, const char *msg);
 
@@ -126,11 +136,15 @@ private:
 	int parseSet(unsigned char *input, int inputLength, unsigned char **set,
 			int offset);
 
-	void initH264Track(unsigned char *input, int inputSize);
+	void parseParameter(unsigned char *input, int inputSize);
 
-	int initH264Track(unsigned char *input, int inputSize, int offset);
+	int parseParameter(unsigned char *input, int inputSize, int offset);
 
-	inline bool isNALU(unsigned char *input, int inputLength, int offset);
+	static inline bool isNALU(unsigned char *input, int inputLength,
+			int offset);
+
+	static inline void addSampleLength(uint8_t **output, uint8_t *input,
+			uint32_t length);
 
 };
 

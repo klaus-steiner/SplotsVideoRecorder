@@ -14,11 +14,7 @@ public class Mp4Encoder {
 
 	private Bitmap thumbnail;
 
-	public Mp4Encoder(String outputPath) throws IllegalArgumentException {
-		init(outputPath);
-	}
-
-	private native void init(String outputPath) throws IllegalArgumentException;
+	public native void init(String outputPath) throws IllegalArgumentException;
 
 	public native void initAudio(int bitrate, int channels, int sampleRate) throws IllegalArgumentException;
 

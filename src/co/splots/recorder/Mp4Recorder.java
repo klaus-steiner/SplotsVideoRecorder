@@ -108,9 +108,12 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 							cache = null;
 						} else
 							frameDataArray = ByteBuffer.wrap(frameData, 0, readedDataSize);
-						if (frameDataArray != null)
-							if (!encoder.encodeAudioSample(frameDataArray.array()))
-								Log.d("aac thread", "encoding failed.");
+						if (frameDataArray != null) {
+							synchronized (Mp4Recorder.this) {
+								if (!encoder.encodeAudioSample(frameDataArray.array()))
+									Log.d("aac thread", "encoding failed.");
+							}
+						}
 					}
 				} else if (runAudioThread && !recording && cache == null)
 					cache = frameData.clone();
@@ -130,9 +133,12 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 			while (!lastData) {
 				concurrentData = viewDataQueue.poll();
 				lastData = (concurrentData == null) && !runVideoThread;
-				if (concurrentData != null)
-					if (!encoder.encodePreviewFrame(concurrentData.getData(), concurrentData.getTimeStamp()))
-						Log.d("h264 thread", "encoding failed.");
+				if (concurrentData != null) {
+					synchronized (Mp4Recorder.this) {
+						if (!encoder.encodePreviewFrame(concurrentData.getData(), concurrentData.getTimeStamp()))
+							Log.d("h264 thread", "encoding failed.");
+					}
+				}
 			}
 		}
 	}
@@ -149,16 +155,19 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 			} catch (InterruptedException e) {}
 			try {
 				if (!canceled) {
-					encoder.release();
-					new Handler(Looper.getMainLooper()).post(new Runnable() {
+					synchronized (Mp4Recorder.this) {
+						encoder.release();
+					}
+					if (outputPath != null) {
+						new Handler(Looper.getMainLooper()).post(new Runnable() {
 
-						@Override
-						public void run() {
-							if (recordingFinishedListener != null)
-								recordingFinishedListener.onRecordingFinished(new File(outputPath));
-						}
-					});
-
+							@Override
+							public void run() {
+								if (recordingFinishedListener != null)
+									recordingFinishedListener.onRecordingFinished(new File(outputPath));
+							}
+						});
+					}
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -190,22 +199,8 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 	private Thread audioThread;
 	private float frameRate;
 	private Mp4Encoder encoder;
-	private int outputWidth;
-	private int outputHeight;
-	private Rect crop;
 
-	public Mp4Recorder(String outputPath, int outputWidth, int outputHeight) {
-		this(outputPath, outputWidth, outputHeight, null);
-	}
-
-	public Mp4Recorder(String outputPath, int outputWidth, int outputHeight, Rect crop) {
-		this.outputPath = outputPath;
-		this.outputWidth = outputWidth;
-		this.outputHeight = outputHeight;
-		if (crop == null)
-			this.crop = new Rect(0, 0, outputWidth, outputHeight);
-		else
-			this.crop = crop;
+	public Mp4Recorder() {
 		this.audioSampleRate = 44100;
 		this.recording = false;
 		this.maxDuration = -1;
@@ -239,6 +234,7 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 		this.camera.setPreviewCallbackWithBuffer(this);
 		if (encoder != null)
 			encoder.setCameraInfo(info);
+		prepareCamera();
 	}
 
 	public Bitmap getThumbnail() {
@@ -247,14 +243,7 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 		return null;
 	}
 
-	public void prepare() throws IOException {
-		if (runVideoThread || runAudioThread)
-			throw new IllegalStateException("You must first stop the encoder.");
-		if (camera == null)
-			throw new IllegalStateException("No camera set.");
-		recording = false;
-		canceled = false;
-		recordStart = 0;
+	private void prepareCamera() {
 		Parameters cameraParameters = camera.getParameters();
 		previewSize = cameraParameters.getPreviewSize();
 		int previewBufferSize = previewSize.width * previewSize.height + (previewSize.width * previewSize.height + 1) / 2;
@@ -265,29 +254,70 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 		camera.setParameters(cameraParameters);
 		camera.addCallbackBuffer(new byte[previewBufferSize]);
 		camera.addCallbackBuffer(new byte[previewBufferSize]);
-		encoder = new Mp4Encoder(outputPath);
-		try {
-			encoder.initVideo(frameRate, previewSize.width, previewSize.height, crop, outputWidth, outputHeight);
-			encoder.initAudio(124000, 1, audioSampleRate);
-			encoder.setCameraInfo(cameraInfo);
-		} catch (Exception e) {
-			cancel();
-			e.printStackTrace();
-		}
-		runAudioThread = true;
-		AudioRecordRunnable audioRecordRunnable = new AudioRecordRunnable();
-		audioThread = new Thread(audioRecordRunnable, "AudioThread");
-		audioThread.start();
-		synchronized (Mp4Recorder.SYNC_AAC_H264) {
+	}
+
+	public void prepare(String outputPath, int outputWidth, int outputHeight) throws IOException {
+		prepare(outputPath, outputWidth, outputHeight, null, 44100);
+	}
+
+	public void prepare(String outputPath, int outputWidth, int outputHeight, Rect crop, int audioSampleRate)
+			throws IOException {
+		if (camera == null)
+			throw new IllegalStateException("No camera set.");
+		pause();
+		String lastOutputPath = this.outputPath;
+		this.outputPath = outputPath;
+		this.audioSampleRate = audioSampleRate;
+		Rect cropRect = crop;
+		if (cropRect == null)
+			cropRect = new Rect(0, 0, outputWidth, outputHeight);
+		recording = false;
+		canceled = false;
+		recordStart = 0;
+		recordedTime = 0;
+		recordStart = 0;
+		viewDataQueue.clear();
+		prepareCamera();
+		boolean stopped = !runAudioThread && !runVideoThread;
+		if (!runAudioThread && audioThread != null && audioThread.isAlive())
+			audioThread.interrupt();
+		if (!runVideoThread && videoThread != null && videoThread.isAlive())
+			videoThread.interrupt();
+
+		synchronized (Mp4Recorder.this) {
+			encoder = new Mp4Encoder();
 			try {
-				while (!audioRecordRunnable.isReady())
-					SYNC_AAC_H264.wait();
-			} catch (InterruptedException e) {}
+				encoder.init(outputPath);
+				encoder.initAudio(124000, 1, audioSampleRate);
+				encoder.initVideo(frameRate, previewSize.width, previewSize.height, cropRect, outputWidth, outputHeight);
+				encoder.setCameraInfo(cameraInfo);
+			} catch (Exception e) {
+				cancel();
+				e.printStackTrace();
+			}
 		}
-		runVideoThread = true;
-		videoThread = new Thread(new VideoEncoderRunnable(), "VideoThread");
-		videoThread.start();
-		new Thread(new MuxerRunnable(), "MuxerThread").start();
+
+		if (!runAudioThread) {
+			runAudioThread = true;
+			AudioRecordRunnable audioRecordRunnable = new AudioRecordRunnable();
+			audioThread = new Thread(audioRecordRunnable, "AudioThread");
+			audioThread.start();
+			synchronized (Mp4Recorder.SYNC_AAC_H264) {
+				try {
+					while (!audioRecordRunnable.isReady())
+						SYNC_AAC_H264.wait();
+				} catch (InterruptedException e) {}
+			}
+		}
+		if (!runVideoThread) {
+			runVideoThread = true;
+			videoThread = new Thread(new VideoEncoderRunnable(), "VideoThread");
+			videoThread.start();
+		}
+		if (stopped)
+			new Thread(new MuxerRunnable(), "MuxerThread").start();
+		else if (!stopped && lastOutputPath != null)
+			new File(lastOutputPath).delete();
 	}
 
 	public void start() {
@@ -327,10 +357,6 @@ public class Mp4Recorder implements Camera.PreviewCallback {
 
 	public void setMaxDuration(long duration) {
 		this.maxDuration = duration;
-	}
-
-	public void setAudioSampleRate(int sampleRate) {
-		this.audioSampleRate = sampleRate;
 	}
 
 	public void cancel() {
