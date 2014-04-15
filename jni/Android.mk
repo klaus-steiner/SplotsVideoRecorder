@@ -16,16 +16,16 @@ LOCAL_C_INCLUDES := $(MY_PATH)/mp4v2/include \
 					  $(MY_PATH)/libyuv/include \
 					  $(MY_PATH)/libaacenc/inc
 #					   $(MY_PATH)/fdk-aac/libAACdec/include \
-#        $(MY_PATH)/fdk-aac/libAACenc/include \
-#       	$(MY_PATH)/fdk-aac/libPCMutils/include \
-#        $(MY_PATH)/fdk-aac/libFDK/include \
-#        $(MY_PATH)/fdk-aac/libSYS/include \
-#        $(MY_PATH)/fdk-aac/libMpegTPDec/include \
-#        $(MY_PATH)/fdk-aac/libMpegTPEnc/include \
-#        $(MY_PATH)/fdk-aac/libSBRdec/include \
-#        $(MY_PATH)/fdk-aac/libSBRenc/include
+ #       $(MY_PATH)/fdk-aac/libAACenc/include \
+ #      	$(MY_PATH)/fdk-aac/libPCMutils/include \
+ #       $(MY_PATH)/fdk-aac/libFDK/include \
+ #       $(MY_PATH)/fdk-aac/libSYS/include \
+ #       $(MY_PATH)/fdk-aac/libMpegTPDec/include \
+ #       $(MY_PATH)/fdk-aac/libMpegTPEnc/include \
+ #       $(MY_PATH)/fdk-aac/libSBRdec/include \
+ #       $(MY_PATH)/fdk-aac/libSBRenc/include
 LOCAL_LDLIBS := -llog
-#LOCAL_STATIC_LIBRARIES := libFraunhoferAAC
+LOCAL_STATIC_LIBRARIES := libFraunhoferAAC
 LOCAL_SHARED_LIBRARIES := libwels libyuv libmp4v2 libaacenc
 include $(BUILD_SHARED_LIBRARY)
 

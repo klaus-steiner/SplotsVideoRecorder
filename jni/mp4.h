@@ -98,7 +98,6 @@ public:
 	void release(JNIEnv* env, jobject thiz);
 
 private:
-
 	VO_AUDIO_CODECAPI *aacEncoder;
 	VO_MEM_OPERATOR *aacMemoryOperator;
 	VO_CODEC_INIT_USERDATA *aacUserData;
@@ -107,7 +106,8 @@ private:
 	VO_CODECBUFFER *aacOutputBuffer;
 	VO_AUDIO_OUTPUTINFO *aacOutputInfo;
 	AACENC_PARAM *audioParameter;
-	const char* outputPath;
+	//HANDLE_AACENCODER aacEncoder;
+	uint8_t aacESConfig[2];
 
 	ISVCEncoder *h264Encoder;
 	MP4FileHandle mp4FileHandler;
@@ -116,18 +116,15 @@ private:
 	MP4TrackId h264TrackId;
 	MP4TrackId aacTrackId;
 	uint8_t *thumbnail;
-	uint8_t *thumbnailY;
-	uint8_t *thumbnailU;
-	uint8_t *thumbnailV;
+	int thumbnailWidth;
+	int thumbnailHeight;
 	float frameRateSum;
 	int frameCount;
 	int thumbnailDataLength;
 	long lastH264TimeStamp;
 	long lastAACTimeStamp;
 	Picture *picture;
-	uint8_t aacESConfig[2];
-	bool audioEncoderIsFine;
-	bool videoEncoderIsFine;
+	const char* outputPath;
 
 	void throwJavaException(JNIEnv* env, const char *name, const char *msg);
 
